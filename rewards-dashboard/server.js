@@ -682,6 +682,22 @@ async function handleApi(req, res, url) {
     return forward(res, "DELETE", `/sessions/${email}`);
   }
 
+  // dashboard-local account data (separate from the bot's own accounts/
+  // sessions, which live on the Control API and are untouched by this)
+  if (pathname.startsWith("/api/dashboard-accounts/") && method === "DELETE") {
+    const email = decodeURIComponent(
+      pathname.slice("/api/dashboard-accounts/".length),
+    );
+    if (!email) return sendJson(res, 400, { error: "Missing account email" });
+    try {
+      store.deleteAccount(email);
+      hub.broadcast("state", currentState());
+      return sendJson(res, 200, { ok: true });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
   // control
   if (pathname.startsWith("/api/control/") && method === "POST") {
     const action = pathname.slice("/api/control/".length);

@@ -71,6 +71,8 @@ export const api = {
   sessions: () => call("GET", "/api/sessions"),
   clearSession: (email) =>
     call("DELETE", `/api/sessions/${encodeURIComponent(email)}`),
+  deleteDashboardAccount: (email) =>
+    call("DELETE", `/api/dashboard-accounts/${encodeURIComponent(email)}`),
 
   control: (action, body = {}) => call("POST", `/api/control/${action}`, body),
 };

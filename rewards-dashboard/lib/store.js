@@ -245,6 +245,13 @@ class Store {
       historyForEmail: this.db.prepare(
         "SELECT ts, points, gained, duration_sec as durationSec FROM account_history WHERE email = ? ORDER BY ts ASC",
       ),
+      deleteAccountRow: this.db.prepare("DELETE FROM accounts WHERE email = ?"),
+      deleteAccountHistory: this.db.prepare(
+        "DELETE FROM account_history WHERE email = ?",
+      ),
+      deleteAccountActivity: this.db.prepare(
+        "DELETE FROM activity WHERE email = ?",
+      ),
       allAccounts: this.db.prepare(`
                 SELECT email, user_name as userName, geo_locale as geoLocale, status,
                        last_start_at as lastStartAt, last_end_at as lastEndAt,
@@ -1013,6 +1020,23 @@ class Store {
 
   accountHistory(email) {
     return this.stmts.historyForEmail.all(email);
+  }
+
+  // Purges everything the dashboard has ever recorded for an account it no
+  // longer tracks (e.g. removed from the bot's .env) - the accounts row
+  // itself plus its point history and activity log entries - so it stops
+  // showing up anywhere (accounts list, overview, history charts).
+  deleteAccount(email) {
+    this.db.exec("BEGIN");
+    try {
+      this.stmts.deleteAccountRow.run(email);
+      this.stmts.deleteAccountHistory.run(email);
+      this.stmts.deleteAccountActivity.run(email);
+      this.db.exec("COMMIT");
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
   }
 
   saveNow() {

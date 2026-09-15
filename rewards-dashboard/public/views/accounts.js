@@ -11,6 +11,12 @@ const selectedForBatch = new Set();
 const expandedAccounts = new Set();
 let batchRunning = false;
 
+// Two-step delete: a key must be "armed" by a first click before a second
+// click on the confirm button actually deletes anything, so there's no way
+// to remove an account's dashboard data with a single accidental click.
+const deleteArmed = new Set();
+const deleting = new Set();
+
 const SOURCE_LABELS = {
   search: "Search",
   bonus: "Bonus search",
@@ -57,6 +63,29 @@ function selectableAccounts() {
   return (accountsPayload?.accounts || []).filter(
     (a) => a.configured && Number.isInteger(a.index),
   );
+}
+
+// Removes an account's stored data (status, history, activity log) from the
+// dashboard's own database. This never touches the bot itself - it's meant
+// for accounts the bot no longer runs (removed from .env) whose dashboard
+// data would otherwise linger forever.
+async function deleteAccount(account) {
+  if (!context) return;
+
+  deleteArmed.delete(account.key);
+  deleting.add(account.key);
+  render(rootEl);
+  try {
+    await context.api.deleteDashboardAccount(account.email);
+    context.toast(`Removed ${account.email} from the dashboard.`, "success");
+    context.invalidate();
+    await context.refresh();
+  } catch (error) {
+    context.toast(error.message, error.status === 409 ? "warn" : "error");
+  } finally {
+    deleting.delete(account.key);
+    render(rootEl);
+  }
 }
 
 async function runSelectedAccounts() {
@@ -305,6 +334,17 @@ function renderAccountPanel(a, live) {
   const isExpanded = expandedAccounts.has(a.key);
   const detailsId = `acc-details-${U.escapeAttr(a.key)}`;
 
+  const isDeleting = deleting.has(a.key);
+  const deleteBlocked = a.status === "running" || launching.has(a.index);
+  const deleteButton = deleteArmed.has(a.key)
+    ? `<span class="acc-delete-confirm">
+        <button type="button" class="btn btn-small" data-cancel-delete="${U.escapeAttr(a.key)}" ${isDeleting ? "disabled" : ""}>Cancel</button>
+        <button type="button" class="btn btn-danger btn-small" data-confirm-delete="${U.escapeAttr(a.key)}" ${isDeleting ? "disabled" : ""} title="Permanently remove this account and its history from the dashboard">
+            ${isDeleting ? "Removing\u2026" : "Are you sure?"}
+        </button>
+      </span>`
+    : `<button type="button" class="btn btn-danger btn-small" data-arm-delete="${U.escapeAttr(a.key)}" ${deleteBlocked ? "disabled" : ""} title="${deleteBlocked ? "The account must be idle to delete it" : "Remove this account and its history from the dashboard"}">Delete</button>`;
+
   const chips = [
     protection
       ? `<span class="pill ${protection.pillClass}" title="${U.escapeAttr(protection.streak)}; streak protection is ${protection.state.toLowerCase()}; ${U.escapeAttr(protection.days)}">Protection ${protection.state} \u00b7 ${a.streakProtectionRemainingDays == null ? "days unavailable" : `${a.streakProtectionRemainingDays} day${a.streakProtectionRemainingDays === 1 ? "" : "s"} left`}</span>`
@@ -328,6 +368,7 @@ function renderAccountPanel(a, live) {
                 <span class="acc-status-pill">${U.statusPill(statusKey)}</span>
                 ${selectCheckbox}
                 ${runButton}
+                ${deleteButton}
             </span>
         </div>
         <div class="panel-body" id="${detailsId}" ${isExpanded ? "" : "hidden"}>
@@ -388,6 +429,28 @@ function render(root) {
       if (expandedAccounts.has(key)) expandedAccounts.delete(key);
       else expandedAccounts.add(key);
       render(root);
+    }),
+  );
+
+  container.querySelectorAll("button[data-arm-delete]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      deleteArmed.add(btn.dataset.armDelete);
+      render(root);
+    }),
+  );
+
+  container.querySelectorAll("button[data-cancel-delete]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      deleteArmed.delete(btn.dataset.cancelDelete);
+      render(root);
+    }),
+  );
+
+  container.querySelectorAll("button[data-confirm-delete]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.confirmDelete;
+      const account = accounts.find((a) => a.key === key);
+      if (account) deleteAccount(account);
     }),
   );
 
