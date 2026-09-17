@@ -1,0 +1,98 @@
+name: Auto Sync and Docker Push
+on:
+  schedule:
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+
+env:
+  UPSTREAM_REPO: https://github.com/mgrimace/rewards-dashboard.git
+  UPSTREAM_BRANCH: main
+  TARGET_BRANCH: main
+  # 替换为你的 Docker Hub 仓库名，格式为：用户名/项目名
+  DOCKERHUB_REPO: ${{ secrets.DOCKER_USERNAME }}/microsoft-rewards-dashboard
+
+permissions:
+  contents: write  # 允许读写仓库内容以同步代码
+  actions: write  # 允许操作 Actions
+
+jobs:
+  sync-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure Git and sync upstream
+        id: sync_check # 添加 ID 以便后续步骤引用输出
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          # 配置Git身份
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 添加上游仓库
+          git remote add upstream "$UPSTREAM_REPO" || true
+          git fetch upstream "$UPSTREAM_BRANCH"
+          
+          # 创建临时分支并切换到目标分支
+          git checkout -B temp-sync-branch "$TARGET_BRANCH"
+          
+          # 合并上游代码，使用 theirs 策略自动解决冲突
+          git merge --allow-unrelated-histories --no-commit --no-ff -X theirs upstream/"$UPSTREAM_BRANCH" || true
+          
+          # 强力驱逐 .github 目录的任何变更
+          git reset HEAD .github/ 2>/dev/null || true
+          git checkout HEAD -- .github/ 2>/dev/null || true
+          git clean -fd .github/ 2>/dev/null || true
+
+          # 检查暂存区
+          if git diff --cached --quiet; then
+            echo "🛑 上游无新源码变更，直接退出工作流"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # 完成合并并提交
+          git commit -m "Auto sync from upstream: $(git log --format=%h -n 1 upstream/$UPSTREAM_BRANCH)"
+          
+          # 推送变更到目标分支
+          git push origin temp-sync-branch:"$TARGET_BRANCH"
+          git checkout "$TARGET_BRANCH"
+          git merge temp-sync-branch
+          git branch -D temp-sync-branch
+          
+          # 标记需要构建镜像
+          echo "should_build=true" >> $GITHUB_OUTPUT
+
+      # ==================== Docker Hub 构建与推送步骤 ====================
+      - name: Set up QEMU
+        if: steps.sync_check.outputs.should_build == 'true'
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        if: steps.sync_check.outputs.should_build == 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to Docker Hub
+        if: steps.sync_check.outputs.should_build == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Build and push Docker image
+        if: steps.sync_check.outputs.should_build == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: rewards-dashboard
+          file: rewards-dashboard/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.DOCKERHUB_REPO }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
