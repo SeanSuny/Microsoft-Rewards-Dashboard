@@ -17,6 +17,7 @@ const TOKEN_TO_CSS_VAR = {
   focus: "--focus",
   positive: "--positive",
   negative: "--negative",
+  warning: "--warning",
   energyHighAccent: "--energy-high-accent",
   energyHighBg: "--energy-high-bg",
 };
