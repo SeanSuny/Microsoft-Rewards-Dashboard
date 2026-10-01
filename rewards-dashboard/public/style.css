@@ -23,6 +23,7 @@
   /* Semantic */
   --positive: #5f7556;
   --negative: #e67c7c;
+  --warning: #7D4E00;
   --energy-high-accent: #9664d0;
 
   /* Layout */
@@ -35,7 +36,7 @@
   /* Derived operational colours */
   --positive-bg: color-mix(in srgb, var(--positive) 16%, var(--surface));
   --negative-bg: color-mix(in srgb, var(--negative) 16%, var(--surface));
-  --amber: color-mix(in srgb, var(--negative) 55%, var(--positive) 45%);
+  --amber: var(--warning);
   --amber-bg: color-mix(in srgb, var(--amber) 14%, var(--surface));
 }
 
@@ -2288,6 +2289,7 @@ tbody tr:hover {
       --focus: #4d8fdb;
       --positive: #87a07a;
       --negative: #c45858;
+      --warning: #D7A32E;
       --energy-high-accent: #7d5aa9;
       --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     }
