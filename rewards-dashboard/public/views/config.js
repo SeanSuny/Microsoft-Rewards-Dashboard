@@ -397,7 +397,6 @@ const FIELD_GROUPS = [
         kind: "text",
         label: "ntfy server URL",
         desc: "ntfy server URL",
-        placeholder: "https://ntfy.sh",
       },
       "webhook.ntfy.topic": {
         kind: "text",
