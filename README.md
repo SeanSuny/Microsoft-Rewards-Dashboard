@@ -21,8 +21,8 @@ A companion dashboard for [microsoft-rewards-script](https://github.com/thenetsk
 
 1. On the bot side, enable the Control API — set `API_MODE=true` and `API_TOKEN=<some-long-random-string>` on the `microsoft-rewards-script` service, and expose port `3010`.
 
-> [!TIP]
-> Also enable the `API_ALLOW_SCHEDULE_WRITE` and `API_ALLOW__CONFIG_WRITE` on the script side to allow the dashboard to modify the script's config and scheduler.
+> [!CAUTION]
+> Enable `API_ALLOW_SCHEDULE_WRITE`, `API_ALLOW__CONFIG_WRITE`, and `API_ALLOW_CONFIG_REVEAL` on the script side to allow the dashboard to modify the script's config and scheduler, and enable viewing/modifying sensitive values like tokens.
 
 2. Review this repo's `compose.yaml` and set `CONTROL_API_TOKEN` (in a `.env` file next to it) to that same token.
 3. Build and start the container: `docker compose up -d`.

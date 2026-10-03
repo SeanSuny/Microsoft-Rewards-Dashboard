@@ -271,7 +271,13 @@ function renderAccountRows(root) {
                         </span>
                     </div>
                     <div class="hero-acc-sub">${sub}</div>
-                    ${a.lastError ? `<div class="hero-acc-error">${U.escapeHtml(a.lastError)}</div>` : ""}
+                    ${a.lastError
+                      ? `<div class="hero-acc-error">${U.escapeHtml(
+                          a.lastError.length > 120
+                            ? `${a.lastError.slice(0, 119)}…`
+                            : a.lastError
+                        )}</div>`
+                      : ""}
                 </div>
                 <div class="hero-acc-actions">
                     ${a.configured && Number.isInteger(a.index)
