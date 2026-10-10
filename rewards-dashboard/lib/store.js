@@ -208,14 +208,14 @@ class Store {
             `),
       upsertAccountEnd: this.db.prepare(`
                 INSERT INTO accounts (email, user_name, status, last_end_at, last_gained, last_points, last_duration_sec, last_error)
-                VALUES (?, ?, 'success', ?, ?, ?, ?, NULL)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(email) DO UPDATE SET
-                    status = 'success',
+              status = excluded.status,
                     last_end_at = excluded.last_end_at,
                     last_gained = excluded.last_gained,
                     last_points = excluded.last_points,
                     last_duration_sec = excluded.last_duration_sec,
-                    last_error = NULL
+                  last_error = excluded.last_error
             `),
       upsertAccountError: this.db.prepare(`
                 INSERT INTO accounts (email, status, last_end_at, last_error)
@@ -549,21 +549,32 @@ class Store {
         break;
       }
       case "account-end": {
+        const failedStatuses = new Set(["failed", "cancelled"]);
+        const accountStatus = failedStatuses.has(event.accountStatus)
+          ? "error"
+          : "success";
+        const error = accountStatus === "error" || event.accountStatus === "partial"
+          ? event.error || `Account finished with status=${event.accountStatus}`
+          : null;
         this.stmts.upsertAccountEnd.run(
           event.email,
           event.userName || null,
+          accountStatus,
           event.ts,
           event.gained,
           event.newPoints,
           event.durationSec,
+          error,
         );
-        this.stmts.insertHistory.run(
-          event.email,
-          event.ts,
-          event.newPoints,
-          event.gained,
-          event.durationSec,
-        );
+        if (event.gained != null) {
+          this.stmts.insertHistory.run(
+            event.email,
+            event.ts,
+            event.newPoints,
+            event.gained,
+            event.durationSec,
+          );
+        }
         this._pushActivity(event);
         this._scheduleAutoCloseCheck();
         break;

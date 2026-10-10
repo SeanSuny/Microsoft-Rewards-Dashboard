@@ -1632,13 +1632,30 @@ tbody tr:hover {
   font-weight: 600;
 }
 
-.hero-acc-error {
+.hero-acc-error,
+.hero-acc-warning {
   font-size: 0.73rem;
-  color: var(--negative);
   font-style: italic;
   margin-top: 0.1rem;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+.hero-acc-error {
+  color: var(--negative);
+}
+.hero-acc-completion {
+  color: var(--positive);
+  font-size: 0.73rem;
+  font-style: italic;
+  margin-top: 0.1rem;
+}
+.hero-acc-warning {
+  color: var(--amber);
+}
+.hero-acc-warning a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .hero-acc-actions {

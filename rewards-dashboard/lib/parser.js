@@ -11,7 +11,7 @@ const APP_LINE_RE =
 
 const ACCOUNT_START_RE = /^Starting account:\s(\S+)\s\|\sgeoLocale:\s(.*)$/;
 const ACCOUNT_END_RE =
-  /^Completed account:\s(\S+)\s\|\spointsGained=(-?\d+)\s\|\spreviousBalance=(\d+)\s\|\scurrentBalance=(\d+)\s\|\sdurationSeconds=([\d.]+)$/;
+  /^(?:Completed|Finished) account:\s(\S+)\s\|\spointsGained=(-?\d+(?:\.\d+)?|unknown)\s\|\spreviousBalance=(\d+(?:\.\d+)?)\s\|\scurrentBalance=(\d+(?:\.\d+)?)\s\|\sdurationSeconds=([\d.]+)(?:\s\|\sstatus=(\S+))?(?:\s\|\sreason=([\s\S]*))?$/;
 const ACCOUNT_ERR_RE = /^(\S+@\S+):\s([\s\S]*)$/;
 
 // src/index.ts's per-account flow wrapper (Mobile.ts / Desktop.ts) logs this
@@ -28,7 +28,7 @@ const FLOW_FAILED_RE =
 const RUN_START_RE =
   /^Starting Microsoft Rewards Script\s\|\sv([\w.\-]+)\s\|\sAccounts:\s(\d+)\s\|\sClusters:\s(\d+)$/;
 const RUN_END_RE =
-  /^Completed all accounts\s\|\saccountsProcessed=(\d+)\s\|\spointsGained=(-?\d+)\s\|\spreviousBalance=(\d+)\s\|\scurrentBalance=(\d+)\s\|\sruntimeMinutes=([\d.]+)$/;
+  /^Completed all accounts\s\|\saccountsProcessed=(\d+)\s\|\spointsGained=(-?\d+(?:\.\d+)?|unknown)\s\|\spreviousBalance=(\d+(?:\.\d+)?)\s\|\scurrentBalance=(\d+(?:\.\d+)?)\s\|\sruntimeMinutes=([\d.]+)(?:\s\|\sstatus=(\S+))?$/;
 // src/index.ts's waitBeforeNextAccount() - with accountDelay, accounts start
 // one at a time now rather than together, so this wait can be a large
 // fraction of the run's total time.
@@ -143,10 +143,12 @@ function parseLine(rawLine) {
           ...base,
           kind: "account-end",
           email: am[1],
-          gained: Number(am[2]),
+          gained: am[2] === "unknown" ? null : Number(am[2]),
           oldPoints: Number(am[3]),
           newPoints: Number(am[4]),
           durationSec: Number(am[5]),
+          accountStatus: am[6] || "completed",
+          error: am[7] || null,
         };
       }
       break;
@@ -177,10 +179,11 @@ function parseLine(rawLine) {
           ...base,
           kind: "run-end",
           accountsProcessed: Number(am[1]),
-          totalGained: Number(am[2]),
+          totalGained: am[2] === "unknown" ? null : Number(am[2]),
           oldTotal: Number(am[3]),
           newTotal: Number(am[4]),
           runtimeMin: Number(am[5]),
+          terminalStatus: am[6] || "completed",
         };
       }
       break;
