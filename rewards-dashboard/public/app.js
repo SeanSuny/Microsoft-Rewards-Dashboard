@@ -264,7 +264,6 @@ function applyState(next) {
 // status
 function renderStatusBadge() {
   const s = state.status;
-  const outcome = s?.botOutcome;
   const badge = els.statusBadge;
   badge.classList.remove(
     "status-live",
@@ -285,15 +284,6 @@ function renderStatusBadge() {
   } else if (s.authOk === false) {
     badge.classList.add("status-warn");
     els.statusText.textContent = "Control API token rejected";
-  } else if (outcome === "error") {
-    badge.classList.add("status-down");
-    els.statusText.textContent = "Error";
-  } else if (outcome === "success") {
-    badge.classList.add("status-live");
-    els.statusText.textContent = "Success";
-  } else if (s.botRunning) {
-    badge.classList.add("status-live");
-    els.statusText.textContent = "Running now";
   } else {
     badge.classList.add("status-live");
     els.statusText.textContent = "Connected";
