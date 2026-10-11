@@ -28,6 +28,7 @@
 
   /* Layout */
   --radius: 12px;
+  --space-account-columns: 0.85rem;
   --shadow: 0 1px 2px rgba(20, 22, 30, 0.06), 0 1px 1px rgba(20, 22, 30, 0.04);
   --mono:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
@@ -1670,9 +1671,71 @@ tbody tr:hover {
 
 /* Accounts */
 
-/* Account detail panel header / groups */
+/* Account cards and status rail */
+.account-detail-panel {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr) max-content;
+  column-gap: var(--space-account-columns);
+  row-gap: 0.65rem;
+  align-items: center;
+}
+.account-primary-row,
+.account-secondary-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-width: 0;
+}
+.account-card-main {
+  min-width: 0;
+}
+.account-status-rail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.account-protection-rail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.account-rail-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  flex: 0 0 1.55rem;
+  border-radius: 50%;
+  font-size: 0.9rem;
+}
+.account-rail-icon.pill-success {
+  background: var(--positive-bg);
+  color: var(--positive);
+}
+.account-rail-icon.pill-error {
+  background: var(--negative-bg);
+  color: var(--negative);
+}
+.account-rail-icon.pill-running,
+.account-rail-icon.pill-warn {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+.account-rail-icon.pill-pending {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+.account-rail-icon.pill-idle {
+  background: var(--border);
+  color: var(--text-muted);
+}
+
+/* Account details */
 .account-detail-panel .panel-head {
   align-items: center;
+  margin-bottom: 0;
 }
 .account-detail-panel .panel-head h2 {
   display: flex;
@@ -1681,6 +1744,11 @@ tbody tr:hover {
 }
 .account-detail-panel .panel-head h2 [class*="stat-icon-"] {
   flex-shrink: 0;
+}
+.account-detail-body {
+  grid-column: 2 / -1;
+  min-width: 0;
+  padding: 0;
 }
 /* Details caret - rotates from collapsed (▸) to expanded (▾); the details
    panel below is toggled via its plain `hidden` attribute (see global
@@ -1709,6 +1777,7 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  justify-self: end;
 }
 .acc-run-icon {
   display: none;
@@ -1775,71 +1844,14 @@ tbody tr:hover {
   font-weight: 600;
 }
 
-/* Account detail panel body / today row */
+/* Account details and activity status */
 #accountsContainer {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
 }
 
-.account-detail-panel .panel-body {
-  padding: 0;
-}
-.account-today-row {
-  display: flex;
-  gap: 0.5rem;
-  align-items: baseline;
-  flex-wrap: wrap;
-  margin-top: 1rem;
-  padding: 0;
-}
-
-.account-today-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.account-today-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  align-items: center;
-}
-.account-today-groups {
-  align-items: center;
-}
-.today-groups {
-  display: flex;
-  flex: 1 1 auto;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 0.55rem;
-  min-width: 0;
-  overflow-x: auto;
-}
-.today-streak {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  color: var(--text);
-  white-space: nowrap;
-}
-.today-separator {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-.account-features-section {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  margin-top: 0.65rem;
-}
 .account-feature-details {
-  flex: 1 1 auto;
   min-width: 0;
 }
 .account-feature-details > summary {
@@ -1860,11 +1872,16 @@ tbody tr:hover {
   transform: rotate(90deg);
 }
 .account-feature-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
   margin-top: 0.45rem;
 }
 .acc-feature-actions {
   display: flex;
   align-items: center;
+  justify-self: end;
   gap: 0.4rem;
 }
 /* Earnable / per-source chips */
@@ -2693,6 +2710,9 @@ tbody tr:hover {
 
 /* Compact account controls and run-only actions on mobile. */
 @media (max-width: 768px) {
+  .account-detail-panel {
+    --space-account-columns: 0.5rem;
+  }
   .acc-tag-account-id,
   .acc-batch-select span,
   .acc-run-label {
@@ -2704,10 +2724,6 @@ tbody tr:hover {
   }
   .acc-run-button .acc-run-icon {
     display: inline-block;
-  }
-  .today-protection,
-  .today-protection-separator {
-    display: none;
   }
 }
 

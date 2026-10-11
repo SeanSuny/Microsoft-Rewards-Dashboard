@@ -38,11 +38,15 @@ const SOURCE_LABELS = {
   "daily-check-in": "Daily Check-In",
   "read-to-earn": "Read to Earn",
   "visual-search": "Visual search",
+  "visual search": "Visual search",
   "bonus-search": "Bonus search",
   "browser-search-api-report": "Experimental API search",
   "search-on-bing": "Explore on Bing",
   "url-reward": "Website reward",
   "doEnsureStreakProtection": "Streak protection",
+  doActivateSearchPerk: "Search perk",
+  doClaimBonusPoints: "Bonus point claim",
+  doVisualSearch: "Visual search",
 };
 
 function controlState() {
@@ -151,11 +155,16 @@ function renderBatchToolbar(root) {
 }
 
 function featureLabel(activity) {
-  const name = activity.activity || activity.name || "Activity";
+  const name = cleanFeatureText(activity.activity || activity.name || "Activity");
   const legacyPromotion = /^(Daily set|More promotions):\s*["“](.+?)["”]$/i.exec(name);
-  const category = SOURCE_LABELS[name] || legacyPromotion?.[1] || name.replace(/[-_]/g, " ").replace(/\b\w/g, char => char.toUpperCase());
-  const title = activity.title || legacyPromotion?.[2];
-  return title ? `${category}: ${title}` : category;
+  const sourceKey = name.charAt(0).toLowerCase() + name.slice(1);
+  const category = SOURCE_LABELS[name] || SOURCE_LABELS[sourceKey] || SOURCE_LABELS[name.toLowerCase()] || legacyPromotion?.[1] || name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]/g, " ").replace(/\b\w/g, char => char.toUpperCase());
+  const title = cleanFeatureText(activity.title || legacyPromotion?.[2] || "");
+  return cleanFeatureText(title ? `${category}: ${title}` : category);
+}
+
+function cleanFeatureText(value) {
+  return String(value).trim().replace(/^[\s"'“”‘’]+|[\s"'“”‘’]+$/g, "");
 }
 
 function featureState(reason, status) {
@@ -180,9 +189,19 @@ function partialReasonFeatures(reason) {
 
 function featureChips(account) {
   const activities = Array.isArray(account.activities) ? account.activities : [];
-  const earned = [];
-  const outstanding = [];
-  const seen = new Set();
+  const earned = new Map();
+  const outstanding = new Map();
+  const activityLabels = new Set();
+
+  function addChip(collection, key, label, detail, reason) {
+    let chip = collection.get(key);
+    if (!chip) {
+      chip = { label, detail, count: 0, reasons: new Set() };
+      collection.set(key, chip);
+    }
+    chip.count += 1;
+    if (reason) chip.reasons.add(reason);
+  }
 
   for (const activity of activities) {
     const label = featureLabel(activity);
@@ -190,35 +209,42 @@ function featureChips(account) {
     const reason = [activity.reason, activity.message].filter(Boolean).join("; ");
     const alreadyComplete = activity.status === "skipped" && /already[- ]complete|offer-state-confirmed/i.test(reason);
     if (activity.status === "confirmed" || activity.status === "completed" || alreadyComplete) {
-      seen.add(key);
       const points = alreadyComplete
         ? "already complete"
         : activity.pointsKnown === false || activity.pointsGained == null
         ? "points unverified"
         : `${U.fmtSigned(Number(activity.pointsGained))} pts`;
-      earned.push(`<span class="point-source point-source--complete" title="${U.escapeAttr(reason || label)}"><strong>${U.escapeHtml(label)}</strong> ${U.escapeHtml(points)}</span>`);
+      addChip(earned, `${key}|${points.toLowerCase()}`, label, points, reason);
+      activityLabels.add(key);
     } else if (["unconfirmed", "skipped", "failed", "unavailable"].includes(activity.status)) {
-      seen.add(key);
       const state = featureState(reason, activity.status);
-      outstanding.push(`<span class="point-source point-source--target" title="${U.escapeAttr(reason || label)}"><strong>${U.escapeHtml(label)}</strong> ${U.escapeHtml(state)}</span>`);
+      addChip(outstanding, `${key}|${state}`, label, state, reason);
+      activityLabels.add(key);
     }
   }
 
   for (const item of partialReasonFeatures(account.lastError)) {
-    if (seen.has(item.label.toLowerCase())) continue;
-    seen.add(item.label.toLowerCase());
-    outstanding.push(`<span class="point-source point-source--target" title="${U.escapeAttr(item.reason)}"><strong>${U.escapeHtml(item.label)}</strong> ${U.escapeHtml(item.state)}</span>`);
+    const label = cleanFeatureText(item.label);
+    const key = label.toLowerCase();
+    if (activityLabels.has(key)) continue;
+    addChip(outstanding, `${key}|${item.state}`, label, item.state, item.reason);
   }
 
-  if (!earned.length) {
+  if (!earned.size) {
     for (const [source, points] of Object.entries(account.live?.bySource || {})) {
       if (Number(points) <= 0) continue;
       const label = SOURCE_LABELS[source] || source.replace(/[-_]/g, " ").replace(/\b\w/g, char => char.toUpperCase());
-      earned.push(`<span class="point-source point-source--complete"><strong>${U.escapeHtml(label)}</strong> ${U.escapeHtml(U.fmtSigned(Number(points)))} pts</span>`);
+      addChip(earned, `${label.toLowerCase()}|${points}`, label, `${U.fmtSigned(Number(points))} pts`);
     }
   }
 
-  return [...earned, ...outstanding].join("");
+  const renderChips = (chips, className) => [...chips.values()].map((chip) => {
+    const count = chip.count > 1 ? ` x${chip.count}` : "";
+    const title = [...chip.reasons].join("; ") || chip.label;
+    return `<span class="point-source ${className}" title="${U.escapeAttr(title)}"><strong>${U.escapeHtml(chip.label)}</strong> ${U.escapeHtml(chip.detail + count)}</span>`;
+  });
+
+  return [...renderChips(earned, "point-source--complete"), ...renderChips(outstanding, "point-source--target")].join("");
 }
 
 function earnableChips(account) {
@@ -384,54 +410,63 @@ function renderAccountPanel(a, live) {
       </span>`
     : `<button type="button" class="btn btn-danger btn-icon btn-small" data-arm-delete="${U.escapeAttr(a.key)}" aria-label="Delete account" ${deleteBlocked ? "disabled" : ""} title="${deleteBlocked ? "The account must be idle to delete it" : "Remove this account and its history from the dashboard"}"><i class="ph ph-trash" aria-hidden="true"></i></button>`;
 
-  const streakText = a.streakCounter == null
-    ? ""
-    : `<span class="today-streak">🔥\u202f${U.fmtNumber(a.streakCounter)}</span>`;
   const protectionChip = protection
-    ? `<span class="pill today-protection ${protection.pillClass}" title="Streak protection is ${protection.state.toLowerCase()}; ${U.escapeAttr(protection.days)}">Streak Protection ${protection.state} · ${a.streakProtectionRemainingDays == null ? "days unavailable" : `${a.streakProtectionRemainingDays} day${a.streakProtectionRemainingDays === 1 ? "" : "s"} left`}</span>`
+    ? `<span class="account-rail-icon ${protection.pillClass}" role="img" aria-label="Streak protection ${protection.state.toLowerCase()}" title="Streak protection is ${protection.state.toLowerCase()}; ${U.escapeAttr(protection.days)}"><i class="ph ${a.streakProtectionEnabled ? "ph-shield-check" : "ph-shield"}" aria-hidden="true"></i></span>`
     : "";
-  const todayChips = [
-    U.statusPill(statusKey),
-    streakText,
-    protectionChip,
-  ].filter(Boolean).map((item, index) =>
-    index === 0 ? item : `<span class="today-separator ${index === 2 ? "today-protection-separator" : ""}" aria-hidden="true">·</span>${item}`,
-  ).join("");
+  const status = U.pillParts(statusKey);
+  const statusIcons = {
+    full: "ph-check-circle",
+    success: "ph-check-circle",
+    partial: "ph-warning-circle",
+    done: "ph-check-circle",
+    error: "ph-x-circle",
+    crashed: "ph-x-circle",
+    interrupted: "ph-pause-circle",
+    stopped: "ph-pause-circle",
+    running: "ph-circle-notch",
+    starting: "ph-circle-notch",
+    stopping: "ph-stop-circle",
+    pending: "ph-clock",
+    idle: "ph-minus-circle",
+  };
+  const statusRail = `
+    <aside class="account-status-rail" aria-label="Account status">
+      <span class="account-rail-icon ${status.cls}" role="img" aria-label="${U.escapeAttr(status.label)}" title="${U.escapeAttr(status.label)}"><i class="ph ${statusIcons[statusKey] || statusIcons.idle}" aria-hidden="true"></i></span>
+    </aside>`;
   const featureChipsHtml = [
     featureChips({ ...(live || {}), lastError: a.lastError || live?.error }),
     earnableChips(live || {}),
   ].filter(Boolean).join("");
   const featuresOpen = expandedFeatures.has(a.key);
-  const featuresSection = `<div class="account-features-section">
-      <details class="account-feature-details" data-feature-details="${U.escapeAttr(a.key)}" ${featuresOpen ? "open" : ""}>
-        <summary><span class="acc-detail-toggle account-feature-caret" aria-hidden="true">\u25b8</span><span>Activity Status</span></summary>
-        <div class="account-feature-chips account-today-chips">${featureChipsHtml || '<span class="point-source">No feature results reported</span>'}</div>
-      </details>
-      <div class="acc-feature-actions">${deleteButton}</div>
-    </div>`;
+  const featureDetails = `<details class="account-feature-details" data-feature-details="${U.escapeAttr(a.key)}" ${featuresOpen ? "open" : ""}>
+      <summary><span class="acc-detail-toggle account-feature-caret" aria-hidden="true">\u25b8</span><span>Activity Status</span></summary>
+      <div class="account-feature-chips">${featureChipsHtml || '<span class="point-source">No feature results reported</span>'}</div>
+    </details>`;
 
   return `
     <div class="panel account-detail-panel">
-        <div class="panel-head">
+      <div class="account-primary-row">
+        ${statusRail}
+        <div class="account-card-main">
+          <div class="panel-head">
             <h2>
                 <button type="button" class="acc-detail-toggle" data-toggle-details="${U.escapeAttr(a.key)}" aria-expanded="${isExpanded}" aria-controls="${detailsId}" title="${isExpanded ? "Collapse details" : "Expand details"}">\u25b8</button>
               ${U.escapeHtml(a.email)}
             </h2>
             ${a.index != null ? `<span class="tag-mini acc-tag-account-id">ACCOUNT_${a.index}</span>` : ""}
             ${a.configured ? "" : '<span class="tag-mini">unconfigured</span>'}
-            <span class="acc-detail-actions">
-                ${selectCheckbox}
-                ${runButton}
-            </span>
+          </div>
         </div>
-        <div class="panel-body" id="${detailsId}" ${isExpanded ? "" : "hidden"}>
-            ${detailGroups(a, protection)}
-        </div>
-        <div class="account-today-row account-today-groups">
-            <span class="account-today-label">Today:</span>
-          <div class="today-groups">${todayChips}</div>
-        </div>
-        ${featuresSection}
+        <span class="acc-detail-actions">${selectCheckbox}${runButton}</span>
+      </div>
+      <div class="panel-body account-detail-body" id="${detailsId}" ${isExpanded ? "" : "hidden"}>
+        ${detailGroups(a, protection)}
+      </div>
+      <div class="account-secondary-row">
+        <aside class="account-protection-rail" aria-label="Streak protection">${protectionChip}</aside>
+        ${featureDetails}
+        <div class="acc-feature-actions">${deleteButton}</div>
+      </div>
     </div>`;
 }
 
