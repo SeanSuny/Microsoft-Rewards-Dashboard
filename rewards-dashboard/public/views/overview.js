@@ -271,7 +271,7 @@ function renderAccountRows(root) {
                         </span>
                     </div>
                     <div class="hero-acc-sub">${sub}</div>
-                    ${a.lastError
+                    ${a.status === "error" && a.lastError
                       ? `<div class="hero-acc-error">${U.escapeHtml(
                           a.lastError.length > 120
                             ? `${a.lastError.slice(0, 119)}…`

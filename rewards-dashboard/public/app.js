@@ -261,9 +261,25 @@ function applyState(next) {
   currentView()?.onState?.(next, ctx);
 }
 
+function completedRunOutcome(status) {
+  const bot = status?.bot;
+  const run = bot?.run;
+  if (!run?.finished) return null;
+
+  const exit = bot.lastExit;
+  if (
+    ["failed", "cancelled"].includes(run.status) ||
+    (exit && (exit.error || exit.signal || (exit.code != null && exit.code !== 0)))
+  ) {
+    return "error";
+  }
+  return "success";
+}
+
 // status
 function renderStatusBadge() {
   const s = state.status;
+  const outcome = completedRunOutcome(s);
   const badge = els.statusBadge;
   badge.classList.remove(
     "status-live",
@@ -284,6 +300,12 @@ function renderStatusBadge() {
   } else if (s.authOk === false) {
     badge.classList.add("status-warn");
     els.statusText.textContent = "Control API token rejected";
+  } else if (outcome === "error") {
+    badge.classList.add("status-down");
+    els.statusText.textContent = "Error";
+  } else if (outcome === "success") {
+    badge.classList.add("status-live");
+    els.statusText.textContent = "Success";
   } else if (s.botRunning) {
     badge.classList.add("status-live");
     els.statusText.textContent = "Running now";
@@ -301,15 +323,19 @@ function renderFooter() {
     if (!footerStatus) return;
 
     const s = state.status;
+    const outcome = completedRunOutcome(s);
 
-    footerStatus.textContent =
-        !s
-            ? "Connecting…"
-            : !s.reachable
-                ? "Disconnected"
-                : s.botRunning
-                    ? "Running"
-                    : "Connected";
+    footerStatus.textContent = !s
+        ? "Connecting…"
+        : !s.reachable
+          ? "Disconnected"
+          : outcome === "error"
+            ? "Error"
+            : outcome === "success"
+              ? "Success"
+              : s.botRunning
+                ? "Running"
+                : "Connected";
 
     footerScriptVersion.textContent =
         `Microsoft Rewards Script:${s?.version || "\u2013"}`;
@@ -318,11 +344,12 @@ function renderFooter() {
 function renderControlStrip() {
   const s = state.status;
   const botState = s?.botState || "unknown";
+  const outcome = completedRunOutcome(s);
   const usable = Boolean(s?.reachable && s?.authOk !== false);
   const running = botState !== "idle" && botState !== "unknown";
 
   const { cls, label } = U.pillParts(
-    botState === "unknown" ? "idle" : botState,
+    outcome || (botState === "unknown" ? "idle" : botState),
   );
   els.ctlPill.className = `pill ${cls}`;
   els.ctlPill.textContent = label;

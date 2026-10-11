@@ -296,6 +296,37 @@ function statusIconParts(statusKey) {
   }
 }
 
+function renderLastRunRow(account, statusKey) {
+  let status;
+  let details;
+
+  if (statusKey === "pending") {
+    status = "pending";
+    details = "Waiting for this account to start.";
+  } else if (["running", "starting", "stopping"].includes(statusKey)) {
+    status = "running";
+    details = "Run is in progress.";
+  } else if (account.status === "success") {
+    if (account.lastError) {
+      status = "partial";
+      details = 'Some enabled features did not complete; they may be unavailable or unsuccessful. <a href="#logs">Check logs</a>.';
+    } else {
+      status = "full";
+      details = "All expected features completed.";
+    }
+  } else if (account.status === "error") {
+    status = "error";
+    details = 'Run exited with errors or was interrupted. <a href="#logs">Check logs</a>.';
+  } else {
+    return "";
+  }
+
+  return `<div class="account-today-row">
+      <span class="account-today-label">Last run</span>
+      <div class="account-today-chips">${U.statusPill(status)}<span>${details}</span></div>
+    </div>`;
+}
+
 function renderAccountPanel(a, live) {
   const protection = protectionPresentation(a);
   const { usable, running } = controlState();
@@ -354,6 +385,7 @@ function renderAccountPanel(a, live) {
   ]
     .filter(Boolean)
     .join("");
+  const lastRunRow = renderLastRunRow(a, statusKey);
 
   return `
     <div class="panel account-detail-panel">
@@ -378,6 +410,7 @@ function renderAccountPanel(a, live) {
             <span class="account-today-label">Today</span>
             <div class="account-today-chips">${chips}</div>
         </div>` : ""}
+        ${lastRunRow}
     </div>`;
 }
 
