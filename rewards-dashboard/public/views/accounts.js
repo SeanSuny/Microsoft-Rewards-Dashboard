@@ -9,6 +9,7 @@ let context = null;
 const launching = new Set();
 const selectedForBatch = new Set();
 const expandedAccounts = new Set();
+const expandedFeatures = new Set();
 let batchRunning = false;
 
 // Two-step delete: a key must be "armed" by a first click before a second
@@ -29,6 +30,19 @@ const SOURCE_LABELS = {
   appReward: "App reward",
   punchcard: "Punchcard",
   searchOnBing: "Search activity",
+  "daily-set": "Daily Set",
+  "more-promotions": "More promotions",
+  "punchcard-child": "Punchcard",
+  "punchcard-data": "Punchcard",
+  "app-data": "App data",
+  "daily-check-in": "Daily Check-In",
+  "read-to-earn": "Read to Earn",
+  "visual-search": "Visual search",
+  "bonus-search": "Bonus search",
+  "browser-search-api-report": "Experimental API search",
+  "search-on-bing": "Explore on Bing",
+  "url-reward": "Website reward",
+  "doEnsureStreakProtection": "Streak protection",
 };
 
 function controlState() {
@@ -59,20 +73,11 @@ async function runAccount(account) {
   }
 }
 
-function selectableAccounts() {
-  return (accountsPayload?.accounts || []).filter(
-    (a) => a.configured && Number.isInteger(a.index),
-  );
-}
-
-// Removes an account's stored data (status, history, activity log) from the
-// dashboard's own database. This never touches the bot itself - it's meant
-// for accounts the bot no longer runs (removed from .env) whose dashboard
-// data would otherwise linger forever.
 async function deleteAccount(account) {
   if (!context) return;
 
   deleteArmed.delete(account.key);
+  expandedFeatures.delete(account.key);
   deleting.add(account.key);
   render(rootEl);
   try {
@@ -145,26 +150,84 @@ function renderBatchToolbar(root) {
   runBtn.textContent = batchRunning ? "Starting\u2026" : "Run selected";
 }
 
-function earnableBadge(account) {
-  const earnable = account.earnable || account.live?.earnable;
-  const total = earnable
-    ? Object.values(earnable).reduce((sum, points) => sum + (Number(points) || 0), 0)
-    : 0;
-  if (total <= 0) return "";
-  return `<span class="point-source point-source--target"><strong>Earnable</strong> ${U.escapeHtml(U.fmtNumber(total))}</span>`;
+function featureLabel(activity) {
+  const name = activity.activity || activity.name || "Activity";
+  const legacyPromotion = /^(Daily set|More promotions):\s*["“](.+?)["”]$/i.exec(name);
+  const category = SOURCE_LABELS[name] || legacyPromotion?.[1] || name.replace(/[-_]/g, " ").replace(/\b\w/g, char => char.toUpperCase());
+  const title = activity.title || legacyPromotion?.[2];
+  return title ? `${category}: ${title}` : category;
 }
 
-// Only sources that actually earned something today — ten "+0" chips per
-// account is noise, not detail.
-function sourceBreakdown(account) {
-  const bySource = account.live?.bySource || {};
-  return Object.entries(SOURCE_LABELS)
-    .filter(([source]) => Number(bySource[source]) > 0)
-    .map(
-      ([source, label]) =>
-        `<span class="point-source"><strong>${U.escapeHtml(label)}</strong> ${U.escapeHtml(U.fmtSigned(Number(bySource[source])))}</span>`,
-    )
-    .join("");
+function featureState(reason, status) {
+  if (/unavailable|not available|quota unavailable|perk unavailable/i.test(reason)) return "unavailable";
+  if (status === "failed" || /\bfailed\b/i.test(reason)) return "failed";
+  if (status === "skipped" || /\bskipped\b/i.test(reason)) return "skipped";
+  return "unconfirmed";
+}
+
+function partialReasonFeatures(reason) {
+  if (!reason) return [];
+  return reason.split(/;\s*/).map(item => {
+    const promotion = /^More promotions:\s*["“](.+?)["”]:\s*(.*)$/i.exec(item);
+    const match = /^([^:]+):\s*(.*)$/.exec(item);
+    if (!match) return null;
+    const promotionTitle = /^More promotions\s*\((.+)\)$/i.exec(match[1].trim());
+    const label = promotion?.[1] || promotionTitle?.[1] || match[1].trim();
+    const detail = promotion?.[2] || match[2];
+    return { label, state: featureState(detail, "unconfirmed"), reason: detail };
+  }).filter(Boolean);
+}
+
+function featureChips(account) {
+  const activities = Array.isArray(account.activities) ? account.activities : [];
+  const earned = [];
+  const outstanding = [];
+  const seen = new Set();
+
+  for (const activity of activities) {
+    const label = featureLabel(activity);
+    const key = label.toLowerCase();
+    const reason = [activity.reason, activity.message].filter(Boolean).join("; ");
+    const alreadyComplete = activity.status === "skipped" && /already[- ]complete|offer-state-confirmed/i.test(reason);
+    if (activity.status === "confirmed" || activity.status === "completed" || alreadyComplete) {
+      seen.add(key);
+      const points = alreadyComplete
+        ? "already complete"
+        : activity.pointsKnown === false || activity.pointsGained == null
+        ? "points unverified"
+        : `${U.fmtSigned(Number(activity.pointsGained))} pts`;
+      earned.push(`<span class="point-source point-source--complete" title="${U.escapeAttr(reason || label)}"><strong>${U.escapeHtml(label)}</strong> ${U.escapeHtml(points)}</span>`);
+    } else if (["unconfirmed", "skipped", "failed", "unavailable"].includes(activity.status)) {
+      seen.add(key);
+      const state = featureState(reason, activity.status);
+      outstanding.push(`<span class="point-source point-source--target" title="${U.escapeAttr(reason || label)}"><strong>${U.escapeHtml(label)}</strong> ${U.escapeHtml(state)}</span>`);
+    }
+  }
+
+  for (const item of partialReasonFeatures(account.lastError)) {
+    if (seen.has(item.label.toLowerCase())) continue;
+    seen.add(item.label.toLowerCase());
+    outstanding.push(`<span class="point-source point-source--target" title="${U.escapeAttr(item.reason)}"><strong>${U.escapeHtml(item.label)}</strong> ${U.escapeHtml(item.state)}</span>`);
+  }
+
+  if (!earned.length) {
+    for (const [source, points] of Object.entries(account.live?.bySource || {})) {
+      if (Number(points) <= 0) continue;
+      const label = SOURCE_LABELS[source] || source.replace(/[-_]/g, " ").replace(/\b\w/g, char => char.toUpperCase());
+      earned.push(`<span class="point-source point-source--complete"><strong>${U.escapeHtml(label)}</strong> ${U.escapeHtml(U.fmtSigned(Number(points)))} pts</span>`);
+    }
+  }
+
+  return [...earned, ...outstanding].join("");
+}
+
+function earnableChips(account) {
+  const earnable = account.earnable || account.live?.earnable;
+  if (!earnable) return "";
+  const labels = { mobile: "Mobile", browser: "Desktop", app: "App" };
+  return Object.entries(labels).filter(([key]) => Number(earnable[key]) > 0).map(([key, label]) =>
+    `<span class="point-source point-source--target"><strong>${label}</strong> ${U.escapeHtml(U.fmtNumber(earnable[key]))} earnable</span>`,
+  ).join("");
 }
 
 function protectionPresentation(account) {
@@ -273,40 +336,6 @@ function detailGroups(a, protection) {
     .join("")}</div>`;
 }
 
-function renderLastRunRow(account, statusKey, deleteButton) {
-  const activeStatuses = ["pending", "running", "starting", "stopping"];
-  const activeStatus = activeStatuses.includes(statusKey);
-  const outcome = activeStatus ? statusKey : account.status;
-  let summary;
-
-  if (outcome === "success" && !activeStatus) {
-    const partial = Boolean(account.lastError);
-    const featureSummary = partial
-      ? '<span class="account-last-run-feature account-last-run-feature-partial">Partial</span><span class="account-last-run-detail"> - Some enabled features were unavailable or unsuccessful.</span>'
-      : '<span class="account-last-run-feature">Full</span>';
-    summary = `<span class="pill pill-success">Success</span>
-      <span class="account-last-run-separator" aria-hidden="true">&middot;</span>
-      ${featureSummary}
-      ${partial ? '<a class="account-last-run-logs" href="#logs">Check logs</a>' : ""}`;
-  } else if (outcome === "error" && !activeStatus) {
-    summary = `<span class="pill pill-error">Error</span>
-      <span class="account-last-run-separator" aria-hidden="true">&middot;</span>
-      <span class="account-last-run-detail">Run exited with errors or was interrupted.</span>
-      <a class="account-last-run-logs" href="#logs">Check logs</a>`;
-  } else if (activeStatus) {
-    const detail = statusKey === "pending" ? "Waiting to start." : "In progress.";
-    summary = `${U.statusPill(statusKey)}<span class="account-last-run-detail">${detail}</span>`;
-  } else {
-    summary = '<span class="pill pill-idle">Not recorded</span>';
-  }
-
-  return `<div class="account-today-row account-last-run-row">
-      <span class="account-today-label">Last run</span>
-      <div class="account-last-run-content">${summary}</div>
-      <div class="acc-last-run-actions">${deleteButton}</div>
-    </div>`;
-}
-
 function renderAccountPanel(a, live) {
   const protection = protectionPresentation(a);
   const { usable, running } = controlState();
@@ -355,16 +384,31 @@ function renderAccountPanel(a, live) {
       </span>`
     : `<button type="button" class="btn btn-danger btn-icon btn-small" data-arm-delete="${U.escapeAttr(a.key)}" aria-label="Delete account" ${deleteBlocked ? "disabled" : ""} title="${deleteBlocked ? "The account must be idle to delete it" : "Remove this account and its history from the dashboard"}"><i class="ph ph-trash" aria-hidden="true"></i></button>`;
 
-  const chips = [
-    protection
-      ? `<span class="pill ${protection.pillClass}" title="${U.escapeAttr(protection.streak)}; streak protection is ${protection.state.toLowerCase()}; ${U.escapeAttr(protection.days)}">Protection ${protection.state} \u00b7 ${a.streakProtectionRemainingDays == null ? "days unavailable" : `${a.streakProtectionRemainingDays} day${a.streakProtectionRemainingDays === 1 ? "" : "s"} left`}</span>`
-      : "",
-    earnableBadge(live || {}),
-    sourceBreakdown(live || {}),
-  ]
-    .filter(Boolean)
-    .join("");
-  const lastRunRow = renderLastRunRow(a, statusKey, deleteButton);
+  const streakText = a.streakCounter == null
+    ? ""
+    : `<span class="today-streak">🔥\u202f${U.fmtNumber(a.streakCounter)}</span>`;
+  const protectionChip = protection
+    ? `<span class="pill today-protection ${protection.pillClass}" title="Streak protection is ${protection.state.toLowerCase()}; ${U.escapeAttr(protection.days)}">Streak Protection ${protection.state} · ${a.streakProtectionRemainingDays == null ? "days unavailable" : `${a.streakProtectionRemainingDays} day${a.streakProtectionRemainingDays === 1 ? "" : "s"} left`}</span>`
+    : "";
+  const todayChips = [
+    U.statusPill(statusKey),
+    streakText,
+    protectionChip,
+  ].filter(Boolean).map((item, index) =>
+    index === 0 ? item : `<span class="today-separator ${index === 2 ? "today-protection-separator" : ""}" aria-hidden="true">·</span>${item}`,
+  ).join("");
+  const featureChipsHtml = [
+    featureChips({ ...(live || {}), lastError: a.lastError || live?.error }),
+    earnableChips(live || {}),
+  ].filter(Boolean).join("");
+  const featuresOpen = expandedFeatures.has(a.key);
+  const featuresSection = `<div class="account-features-section">
+      <details class="account-feature-details" data-feature-details="${U.escapeAttr(a.key)}" ${featuresOpen ? "open" : ""}>
+        <summary><span class="acc-detail-toggle account-feature-caret" aria-hidden="true">\u25b8</span><span>Activity Status</span></summary>
+        <div class="account-feature-chips account-today-chips">${featureChipsHtml || '<span class="point-source">No feature results reported</span>'}</div>
+      </details>
+      <div class="acc-feature-actions">${deleteButton}</div>
+    </div>`;
 
   return `
     <div class="panel account-detail-panel">
@@ -383,11 +427,11 @@ function renderAccountPanel(a, live) {
         <div class="panel-body" id="${detailsId}" ${isExpanded ? "" : "hidden"}>
             ${detailGroups(a, protection)}
         </div>
-        ${chips ? `<div class="account-today-row">
-            <span class="account-today-label">Today</span>
-            <div class="account-today-chips">${chips}</div>
-        </div>` : ""}
-        ${lastRunRow}
+        <div class="account-today-row account-today-groups">
+            <span class="account-today-label">Today:</span>
+          <div class="today-groups">${todayChips}</div>
+        </div>
+        ${featuresSection}
     </div>`;
 }
 
@@ -398,7 +442,6 @@ function render(root) {
   const liveByEmail = new Map(
     (context?.status?.bot?.run?.accounts || []).map((la) => [la.email, la]),
   );
-
   const errEl = U.$("#accountsError", root);
   if (errEl) {
     errEl.hidden = !accountsPayload?.apiError;
@@ -430,6 +473,14 @@ function render(root) {
       if (input.checked) selectedForBatch.add(index);
       else selectedForBatch.delete(index);
       renderBatchToolbar(root);
+    }),
+  );
+
+  container.querySelectorAll("details[data-feature-details]").forEach((details) =>
+    details.addEventListener("toggle", () => {
+      const key = details.dataset.featureDetails;
+      if (details.open) expandedFeatures.add(key);
+      else expandedFeatures.delete(key);
     }),
   );
 
