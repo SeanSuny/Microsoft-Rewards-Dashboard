@@ -56,6 +56,12 @@ function controlState() {
   return { usable, running };
 }
 
+function selectableAccounts() {
+  return (accountsPayload?.accounts || []).filter(
+    (account) => account.configured && Number.isInteger(account.index),
+  );
+}
+
 async function runAccount(account) {
   if (!context || !account.configured || !Number.isInteger(account.index)) return;
 
@@ -142,7 +148,7 @@ function renderBatchToolbar(root) {
   const count = selectedForBatch.size;
   const total = configured.length;
 
-  U.$("#accountsSelectedCount", root).textContent = `${count}/${total} selected`;
+  U.$("#accountsSelectedCountValue", root).textContent = `${count}/${total}`;
 
   const allBtn = U.$("#accountsSelectAll", root);
   allBtn.checked = total > 0 && count === total;
@@ -151,7 +157,7 @@ function renderBatchToolbar(root) {
 
   const runBtn = U.$("#accountsRunSelected", root);
   runBtn.disabled = !usable || running || batchRunning || count === 0;
-  runBtn.textContent = batchRunning ? "Starting\u2026" : "Run selected";
+  U.$(".accounts-run-selected-label", runBtn).textContent = batchRunning ? "Starting\u2026" : "Run selected";
 }
 
 function featureLabel(activity) {
@@ -571,8 +577,8 @@ export default {
                       <input type="checkbox" id="accountsSelectAll">
                       <span>Select all</span>
                   </label>
-                  <span class="hint" id="accountsSelectedCount">0/0 selected</span>
-                  <button type="button" class="btn btn-primary btn-small" id="accountsRunSelected" disabled>Run selected</button>
+                  <span class="hint" id="accountsSelectedCount"><span id="accountsSelectedCountValue">0/0</span><span class="accounts-selected-label"> selected</span></span>
+                  <button type="button" class="btn btn-primary btn-small accounts-run-selected" id="accountsRunSelected" aria-label="Run selected accounts" title="Run selected accounts" disabled><i class="ph ph-play accounts-run-selected-icon" aria-hidden="true"></i><span class="accounts-run-selected-label">Run selected</span></button>
               </div>
           </div>
       </div>

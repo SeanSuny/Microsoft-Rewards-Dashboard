@@ -1814,6 +1814,9 @@ tbody tr:hover {
   gap: 0.6rem;
   flex-wrap: wrap;
 }
+.accounts-run-selected-icon {
+  display: none;
+}
 
 .acc-detail-groups {
   display: grid;
@@ -2726,6 +2729,29 @@ tbody tr:hover {
 @media (max-width: 768px) {
   .account-detail-panel {
     --space-account-columns: 0.5rem;
+  }
+  .batch-select-header {
+    flex-wrap: nowrap;
+    gap: 0.4rem 0.6rem;
+  }
+  .accounts-selected-label,
+  .accounts-run-selected-label {
+    display: none;
+  }
+  .batch-select-controls {
+    gap: 0.4rem;
+    flex-wrap: nowrap;
+  }
+  #accountsSelectedCount {
+    white-space: nowrap;
+  }
+  .accounts-run-selected {
+    width: 34px;
+    flex: 0 0 34px;
+    padding: 0;
+  }
+  .accounts-run-selected-icon {
+    display: inline-block;
   }
   .acc-tag-account-id,
   .acc-batch-select span,
