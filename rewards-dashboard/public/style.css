@@ -2436,6 +2436,20 @@ tbody tr:hover {
 /* App shell */
 
 /* Header bar / tab bar / control strip / layout */
+@media (min-width: 769px) {
+  .control-strip {
+    flex-wrap: nowrap;
+  }
+  .ctl-state {
+    width: auto;
+    flex: 1 1 auto;
+  }
+  .ctl-actions {
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+}
+
 @media (max-width: 768px) {
   .topbar {
       flex-direction: column;
