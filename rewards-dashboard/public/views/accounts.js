@@ -101,11 +101,12 @@ async function runSelectedAccounts() {
   const excludedAccountIndexes = configured
     .filter((a) => !selectedForBatch.has(a.index))
     .map((a) => a.index);
+  const startBody = excludedAccountIndexes.length ? { excludedAccountIndexes } : {};
 
   batchRunning = true;
   render(rootEl);
   try {
-    await context.api.control("start", { excludedAccountIndexes });
+    await context.api.control("start", startBody);
     context.toast(
       `Started ${selectedIndexes.length}/${configured.length} selected accounts.`,
       "success",
@@ -272,58 +273,37 @@ function detailGroups(a, protection) {
     .join("")}</div>`;
 }
 
-// Mirrors overview.js's statCard icon convention (stat-icon-check /
-// -running / -alert icon-alert-active / -idle with \u2713 / \u25CF / ! / \u2013)
-// so an account's live status reads the same way here as it does there.
-function statusIconParts(statusKey) {
-  switch (statusKey) {
-    case "success":
-    case "done":
-      return { cls: "stat-icon-check", icon: "\u2713", label: "Success" };
-    case "running":
-    case "starting":
-    case "stopping":
-      return { cls: "stat-icon-running", icon: "\u25CF", label: U.pillParts(statusKey).label };
-    case "pending":
-      return { cls: "stat-icon-pending", icon: "\u25CF", label: U.pillParts(statusKey).label };
-    case "error":
-    case "crashed":
-    case "interrupted":
-    case "stopped":
-      return { cls: "stat-icon-alert icon-alert-active", icon: "!", label: U.pillParts(statusKey).label };
-    default:
-      return { cls: "stat-icon-idle", icon: "\u2013", label: "Idle" };
-  }
-}
+function renderLastRunRow(account, statusKey, deleteButton) {
+  const activeStatuses = ["pending", "running", "starting", "stopping"];
+  const activeStatus = activeStatuses.includes(statusKey);
+  const outcome = activeStatus ? statusKey : account.status;
+  let summary;
 
-function renderLastRunRow(account, statusKey) {
-  let status;
-  let details;
-
-  if (statusKey === "pending") {
-    status = "pending";
-    details = "Waiting for this account to start.";
-  } else if (["running", "starting", "stopping"].includes(statusKey)) {
-    status = "running";
-    details = "Run is in progress.";
-  } else if (account.status === "success") {
-    if (account.lastError) {
-      status = "partial";
-      details = 'Some enabled features did not complete; they may be unavailable or unsuccessful. <a href="#logs">Check logs</a>.';
-    } else {
-      status = "full";
-      details = "All expected features completed.";
-    }
-  } else if (account.status === "error") {
-    status = "error";
-    details = 'Run exited with errors or was interrupted. <a href="#logs">Check logs</a>.';
+  if (outcome === "success" && !activeStatus) {
+    const partial = Boolean(account.lastError);
+    const featureSummary = partial
+      ? '<span class="account-last-run-feature account-last-run-feature-partial">Partial</span><span class="account-last-run-detail"> - Some enabled features were unavailable or unsuccessful.</span>'
+      : '<span class="account-last-run-feature">Full</span>';
+    summary = `<span class="pill pill-success">Success</span>
+      <span class="account-last-run-separator" aria-hidden="true">&middot;</span>
+      ${featureSummary}
+      ${partial ? '<a class="account-last-run-logs" href="#logs">Check logs</a>' : ""}`;
+  } else if (outcome === "error" && !activeStatus) {
+    summary = `<span class="pill pill-error">Error</span>
+      <span class="account-last-run-separator" aria-hidden="true">&middot;</span>
+      <span class="account-last-run-detail">Run exited with errors or was interrupted.</span>
+      <a class="account-last-run-logs" href="#logs">Check logs</a>`;
+  } else if (activeStatus) {
+    const detail = statusKey === "pending" ? "Waiting to start." : "In progress.";
+    summary = `${U.statusPill(statusKey)}<span class="account-last-run-detail">${detail}</span>`;
   } else {
-    return "";
+    summary = '<span class="pill pill-idle">Not recorded</span>';
   }
 
-  return `<div class="account-today-row">
+  return `<div class="account-today-row account-last-run-row">
       <span class="account-today-label">Last run</span>
-      <div class="account-today-chips">${U.statusPill(status)}<span>${details}</span></div>
+      <div class="account-last-run-content">${summary}</div>
+      <div class="acc-last-run-actions">${deleteButton}</div>
     </div>`;
 }
 
@@ -349,19 +329,18 @@ function renderAccountPanel(a, live) {
 
   const runButton =
     a.configured && Number.isInteger(a.index)
-      ? `<button type="button" class="btn btn-primary btn-small" data-run-account="${a.index}" ${!usable || running || launching.has(a.index) ? "disabled" : ""
-      } title="Run only ACCOUNT_${a.index}">${launching.has(a.index) ? "Starting\u2026" : "Run only"}</button>`
+      ? `<button type="button" class="btn btn-primary btn-small acc-run-button" data-run-account="${a.index}" aria-label="Run only ACCOUNT_${a.index}" ${!usable || running || launching.has(a.index) ? "disabled" : ""
+      } title="Run only ACCOUNT_${a.index}"><i class="ph ph-play acc-run-icon" aria-hidden="true"></i><span class="acc-run-label">${launching.has(a.index) ? "Starting\u2026" : "Run only"}</span></button>`
       : "";
 
   const selectCheckbox =
     a.configured && Number.isInteger(a.index)
       ? `<label class="check acc-batch-select" title="Include ACCOUNT_${a.index} in a batch run">
-          <input type="checkbox" data-select-account="${a.index}" ${selectedForBatch.has(a.index) ? "checked" : ""}>
+          <input type="checkbox" data-select-account="${a.index}" aria-label="Select ACCOUNT_${a.index} for a batch run" ${selectedForBatch.has(a.index) ? "checked" : ""}>
           <span>Select</span>
         </label>`
       : "";
 
-  const { cls: statusIconCls, icon: statusIcon, label: statusLabel } = statusIconParts(statusKey);
   const isExpanded = expandedAccounts.has(a.key);
   const detailsId = `acc-details-${U.escapeAttr(a.key)}`;
 
@@ -369,12 +348,12 @@ function renderAccountPanel(a, live) {
   const deleteBlocked = a.status === "running" || launching.has(a.index);
   const deleteButton = deleteArmed.has(a.key)
     ? `<span class="acc-delete-confirm">
-        <button type="button" class="btn btn-small" data-cancel-delete="${U.escapeAttr(a.key)}" ${isDeleting ? "disabled" : ""}>Cancel</button>
-        <button type="button" class="btn btn-danger btn-small" data-confirm-delete="${U.escapeAttr(a.key)}" ${isDeleting ? "disabled" : ""} title="Permanently remove this account and its history from the dashboard">
-            ${isDeleting ? "Removing\u2026" : "Are you sure?"}
+        <button type="button" class="btn btn-icon btn-small" data-cancel-delete="${U.escapeAttr(a.key)}" aria-label="Cancel delete" ${isDeleting ? "disabled" : ""} title="Cancel delete"><i class="ph ph-x" aria-hidden="true"></i></button>
+        <button type="button" class="btn btn-danger btn-icon btn-small" data-confirm-delete="${U.escapeAttr(a.key)}" aria-label="Confirm delete account" ${isDeleting ? "disabled" : ""} title="Permanently remove this account and its history from the dashboard">
+          <i class="ph ph-trash" aria-hidden="true"></i>
         </button>
       </span>`
-    : `<button type="button" class="btn btn-danger btn-small" data-arm-delete="${U.escapeAttr(a.key)}" ${deleteBlocked ? "disabled" : ""} title="${deleteBlocked ? "The account must be idle to delete it" : "Remove this account and its history from the dashboard"}">Delete</button>`;
+    : `<button type="button" class="btn btn-danger btn-icon btn-small" data-arm-delete="${U.escapeAttr(a.key)}" aria-label="Delete account" ${deleteBlocked ? "disabled" : ""} title="${deleteBlocked ? "The account must be idle to delete it" : "Remove this account and its history from the dashboard"}"><i class="ph ph-trash" aria-hidden="true"></i></button>`;
 
   const chips = [
     protection
@@ -385,22 +364,20 @@ function renderAccountPanel(a, live) {
   ]
     .filter(Boolean)
     .join("");
-  const lastRunRow = renderLastRunRow(a, statusKey);
+  const lastRunRow = renderLastRunRow(a, statusKey, deleteButton);
 
   return `
     <div class="panel account-detail-panel">
         <div class="panel-head">
             <h2>
                 <button type="button" class="acc-detail-toggle" data-toggle-details="${U.escapeAttr(a.key)}" aria-expanded="${isExpanded}" aria-controls="${detailsId}" title="${isExpanded ? "Collapse details" : "Expand details"}">\u25b8</button>
-                <span class="acc-status-icon ${statusIconCls}" role="img" aria-label="${U.escapeAttr(statusLabel)}" title="${U.escapeAttr(statusLabel)}">${statusIcon}</span>${U.escapeHtml(a.email)}
+              ${U.escapeHtml(a.email)}
             </h2>
             ${a.index != null ? `<span class="tag-mini acc-tag-account-id">ACCOUNT_${a.index}</span>` : ""}
             ${a.configured ? "" : '<span class="tag-mini">unconfigured</span>'}
             <span class="acc-detail-actions">
-                <span class="acc-status-pill">${U.statusPill(statusKey)}</span>
                 ${selectCheckbox}
                 ${runButton}
-                ${deleteButton}
             </span>
         </div>
         <div class="panel-body" id="${detailsId}" ${isExpanded ? "" : "hidden"}>

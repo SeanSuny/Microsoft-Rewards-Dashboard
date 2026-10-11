@@ -261,25 +261,10 @@ function applyState(next) {
   currentView()?.onState?.(next, ctx);
 }
 
-function completedRunOutcome(status) {
-  const bot = status?.bot;
-  const run = bot?.run;
-  if (!run?.finished) return null;
-
-  const exit = bot.lastExit;
-  if (
-    ["failed", "cancelled"].includes(run.status) ||
-    (exit && (exit.error || exit.signal || (exit.code != null && exit.code !== 0)))
-  ) {
-    return "error";
-  }
-  return "success";
-}
-
 // status
 function renderStatusBadge() {
   const s = state.status;
-  const outcome = completedRunOutcome(s);
+  const outcome = s?.botOutcome;
   const badge = els.statusBadge;
   badge.classList.remove(
     "status-live",
@@ -323,7 +308,7 @@ function renderFooter() {
     if (!footerStatus) return;
 
     const s = state.status;
-    const outcome = completedRunOutcome(s);
+    const outcome = s?.botOutcome;
 
     footerStatus.textContent = !s
         ? "Connecting…"
@@ -344,9 +329,9 @@ function renderFooter() {
 function renderControlStrip() {
   const s = state.status;
   const botState = s?.botState || "unknown";
-  const outcome = completedRunOutcome(s);
+  const outcome = s?.botOutcome;
   const usable = Boolean(s?.reachable && s?.authOk !== false);
-  const running = botState !== "idle" && botState !== "unknown";
+  const running = Boolean(s?.botRunning);
 
   const { cls, label } = U.pillParts(
     outcome || (botState === "unknown" ? "idle" : botState),
@@ -355,14 +340,20 @@ function renderControlStrip() {
   els.ctlPill.textContent = label;
 
   const bot = s?.bot;
+  const run = bot?.run;
   const bits = [];
-  if (running && bot?.pid) bits.push(`pid ${bot.pid}`);
-  if (running && bot?.startedAt)
-    bits.push(`started ${U.fmtRelative(bot.startedAt)}`);
-  if (bot?.run?.accountsTotal)
-    bits.push(`${bot.run.accountsSeen || 0}/${bot.run.accountsTotal} accounts`);
-  if (running && bot?.run?.collected != null)
-    bits.push(`${U.fmtSigned(bot.run.collected)} pts`);
+  if (running) {
+    if (bot?.pid) bits.push(`pid ${bot.pid}`);
+    if (bot?.startedAt) bits.push(`started ${U.fmtRelative(bot.startedAt)}`);
+    if (run?.accountsTotal)
+      bits.push(`${run.accountsSeen || 0}/${run.accountsTotal} accounts`);
+    if (run?.collected != null) bits.push(`${U.fmtSigned(run.collected)} pts`);
+  } else if (outcome) {
+    const processed = run?.accountsSeen || run?.totals?.accountsProcessed || run?.accountsTotal;
+    if (processed) bits.push(`${processed} accounts processed`);
+    if (run?.collected != null && run.collected !== 0)
+      bits.push(`${U.fmtSigned(run.collected)} pts earned`);
+  }
   if (!running && s?.schedule?.enabled && s.schedule.nextRunAt) {
     bits.push(`next run ${U.fmtDateTime(s.schedule.nextRunAt)}`);
   }

@@ -114,7 +114,26 @@ let lastLogId = null;
 let lastHealthUptime = null;
 let lastHealthyCheckedAt = null;
 
+function completedBotOutcome(bot) {
+  const run = bot?.run;
+  if (!run?.finished) return null;
+
+  const exit = bot.lastExit;
+  if (
+    run.status === "failed" ||
+    run.status === "cancelled" ||
+    exit?.error ||
+    exit?.signal
+  ) {
+    return "error";
+  }
+  if (run.status === "partial") return run.totals ? "success" : "error";
+  if (exit?.code != null && exit.code !== 0) return "error";
+  return "success";
+}
+
 function currentState() {
+  const botOutcome = completedBotOutcome(backend.bot);
   return {
     reachable: backend.reachable,
     authRequired: backend.authRequired,
@@ -129,7 +148,12 @@ function currentState() {
     uptimeSec: backend.uptimeSec,
     bot: backend.bot,
     botState: backend.bot ? backend.bot.state : "unknown",
-    botRunning: Boolean(backend.bot && backend.bot.state !== "idle"),
+    botOutcome,
+    botRunning: Boolean(
+      backend.bot &&
+      backend.bot.state !== "idle" &&
+      botOutcome === null,
+    ),
     schedule: backend.schedule,
     remoteSchedule: describeRemoteSchedule(backend.remoteSchedule),
     remoteScheduleSupported: backend.remoteScheduleSupported === true,
@@ -386,12 +410,41 @@ function readJsonBody(req, limitBytes = 2_000_000) {
   });
 }
 
-async function forward(res, method, apiPath, body) {
+async function waitForCompletedBotToIdle() {
+  if (!completedBotOutcome(backend.bot)) return false;
+
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    let status;
+    try {
+      status = await client.get("/status");
+    } catch {
+      return false;
+    }
+    backend.bot = status;
+    hub.broadcast("state", currentState());
+    if (status.state === "idle") return true;
+    if (!completedBotOutcome(status)) return false;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return false;
+}
+
+async function forward(res, method, apiPath, body, retryCompletedStart = true) {
   try {
     const data = await client.request(method, apiPath, { body });
     return sendJson(res, 200, data ?? {});
   } catch (e) {
     const status = e.statusCode || 502;
+    if (
+      retryCompletedStart &&
+      method === "POST" &&
+      apiPath === "/start" &&
+      status === 409 &&
+      await waitForCompletedBotToIdle()
+    ) {
+      return forward(res, method, apiPath, body, false);
+    }
     const payload =
       e.body && typeof e.body === "object"
         ? e.body

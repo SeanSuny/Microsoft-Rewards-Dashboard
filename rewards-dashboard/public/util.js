@@ -293,7 +293,7 @@ export function debounce(fn, ms = 250) {
 }
 
 const PILLS = {
-  full: ["pill-success", "Full"],
+  full: ["pill-success", "Complete"],
   success: ["pill-success", "Success"],
   partial: ["pill-warn", "Partial"],
   done: ["pill-success", "Done"],

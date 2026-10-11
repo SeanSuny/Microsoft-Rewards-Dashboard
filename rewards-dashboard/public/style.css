@@ -1682,10 +1682,6 @@ tbody tr:hover {
 .account-detail-panel .panel-head h2 [class*="stat-icon-"] {
   flex-shrink: 0;
 }
-.acc-status-icon {
-  display: none;
-}
-
 /* Details caret - rotates from collapsed (▸) to expanded (▾); the details
    panel below is toggled via its plain `hidden` attribute (see global
    [hidden] rule), so no extra open/closed classes are needed. */
@@ -1714,7 +1710,9 @@ tbody tr:hover {
   align-items: center;
   gap: 0.6rem;
 }
-
+.acc-run-icon {
+  display: none;
+}
 .acc-delete-confirm {
   display: inline-flex;
   align-items: center;
@@ -1810,6 +1808,38 @@ tbody tr:hover {
   flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
+}
+.account-last-run-row {
+  align-items: center;
+}
+.account-last-run-content {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.account-last-run-separator {
+  color: var(--text-muted);
+}
+.account-last-run-feature {
+  color: var(--positive);
+  font-weight: 600;
+}
+.account-last-run-feature-partial {
+  color: var(--amber);
+}
+.acc-last-run-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+.account-last-run-logs {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* Earnable / per-source chips */
@@ -2629,15 +2659,23 @@ tbody tr:hover {
 
 /* Accounts */
 
-/* Detail panel header: compact icon instead of tag + full pill */
+/* Compact account controls and run-only actions on mobile. */
 @media (max-width: 768px) {
-  .acc-status-icon {
-      display: inline-flex;
-    }
   .acc-tag-account-id,
-  .acc-status-pill {
-      display: none;
-    }
+  .acc-batch-select span,
+  .acc-run-label {
+    display: none;
+  }
+  .acc-run-button {
+    width: 34px;
+    padding: 0;
+  }
+  .acc-run-button .acc-run-icon {
+    display: inline-block;
+  }
+  .account-last-run-detail {
+    display: none;
+  }
 }
 
 

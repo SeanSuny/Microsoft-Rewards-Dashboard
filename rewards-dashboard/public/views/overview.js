@@ -347,11 +347,7 @@ function renderTrend() {
 function renderRunHeader(root, status) {
   const bot = status?.bot;
   const run = bot?.run;
-
-  const active =
-    bot &&
-    bot.state !== "idle" &&
-    bot.state !== "unknown";
+  const active = Boolean(status?.botRunning);
 
   const progressBox = U.$("#runProgressBox", root);
   const titleEl = U.$("#run-progress-heading", root);
