@@ -117,6 +117,7 @@ function parseLine(rawLine) {
     ts: dockerTs,
     appTime,
     userName,
+    accountName: userName.toUpperCase() === "MAIN" ? null : userName,
     level: level.toLowerCase(),
     platform,
     title,

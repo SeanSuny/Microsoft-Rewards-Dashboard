@@ -2002,6 +2002,16 @@ tbody tr:hover {
   padding-top: 0.1rem;
 }
 
+.log-account {
+  flex-shrink: 0;
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+  white-space: nowrap;
+  padding-top: 0.1rem;
+}
+
 .log-msg {
   flex: 1;
   min-width: 0;
@@ -2779,6 +2789,9 @@ tbody tr:hover {
   .log-tag {
       width: 5.5rem;
     }
+  .log-account {
+      max-width: 7rem;
+    }
   .toolbar {
       gap: 0.4rem;
     }
@@ -2787,9 +2800,6 @@ tbody tr:hover {
 /* Log tag (very small phones) */
 @media (max-width: 420px) {
   .log-tag {
-      display: none;
-    }
-  .log-date {
       display: none;
     }
   .log-line {

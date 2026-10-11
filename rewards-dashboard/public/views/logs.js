@@ -2,7 +2,6 @@ import * as U from "../util.js";
 
 const MAX_LINES = 3000;
 const LEVEL_RANK = { debug: 0, info: 1, warn: 2, error: 3 };
-
 let rootEl = null;
 let entries = []; // sorted by id
 let seen = new Set();
@@ -20,20 +19,23 @@ const matches = (e) => {
     return false;
   if (!filterText) return true;
   const hay =
-    `${e.title || ""} ${e.platform || ""} ${e.user || ""} ${e.message || ""}`.toLowerCase();
+    `${e.title || ""} ${e.platform || ""} ${e.accountName || e.user || e.email || e.userName || ""} ${e.message || ""}`.toLowerCase();
   return hay.includes(filterText);
 };
 
 function lineHtml(e) {
-  const time = e.ts || (e.receivedAt ? U.fmtTime(e.receivedAt) : "");
-  const commaIdx = time.indexOf(", ");
-  const datePart = commaIdx === -1 ? "" : time.slice(0, commaIdx);
-  const timePart = commaIdx === -1 ? time : time.slice(commaIdx + 2);
+  const timestamp = e.ts || e.receivedAt;
+  const time = timestamp ? U.fmtTime(timestamp) : "";
   const tag = e.title || e.level;
+  const accountName = e.accountName || e.user || e.email || e.userName || "";
+  const account = accountName
+    ? `<span class="log-account">${U.escapeHtml(accountName)}</span>`
+    : "";
   return `<div class="log-line log-line--${U.escapeAttr(e.level)}">
-        <span class="log-time">${datePart ? `<span class="log-date">${U.escapeHtml(datePart)}, </span>` : ""}${U.escapeHtml(timePart)}</span>
+        <span class="log-time">${U.escapeHtml(time)}</span>
         <span class="log-level log-level--${U.escapeAttr(e.level)}">${U.escapeHtml(e.level)}</span>
         <span class="log-tag">${U.escapeHtml(tag || "")}</span>
+        ${account}
         <span class="log-msg">${U.escapeHtml(e.message || e.raw || "")}</span>
     </div>`;
 }
