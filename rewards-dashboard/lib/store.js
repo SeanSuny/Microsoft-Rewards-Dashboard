@@ -495,7 +495,19 @@ class Store {
     if (!running) return;
 
     const lastActivity = this.stmts.lastActivitySince.get(running.startTs);
-    const lastTs = (lastActivity && lastActivity.ts) || running.startTs;
+    // Informational log lines (including ongoing search progress) are parsed
+    // but intentionally omitted from the activity feed. _lastTs is persisted
+    // for every accepted event, so include it to avoid treating those active
+    // runs as silent hangs.
+    const recordedTs = (lastActivity && lastActivity.ts) || running.startTs;
+    const latestLogTs =
+      this._lastTs && Date.parse(this._lastTs) >= Date.parse(running.startTs)
+        ? this._lastTs
+        : running.startTs;
+    const lastTs =
+      Date.parse(latestLogTs) > Date.parse(recordedTs)
+        ? latestLogTs
+        : recordedTs;
     const ageMs = Date.now() - Date.parse(lastTs);
     if (!Number.isFinite(ageMs) || ageMs < RUN_NO_ACTIVITY_STALE_MS) return;
 

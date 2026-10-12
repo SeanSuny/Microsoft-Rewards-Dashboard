@@ -120,9 +120,15 @@ function renderStats(root, status) {
   const accounts = data?.accounts || [];
   const runs = data?.runs || [];
   const lastRun = runs.find((r) => r.status === "done") || runs[0] || null;
+  const liveByEmail = U.liveRunAccountMap(status);
+  const accountStatus = (account) =>
+    U.accountDisplayStatus(
+      account,
+      liveByEmail.get(account.email.trim().toLowerCase()),
+    );
 
-  const errorCount = accounts.filter((a) => a.status === "error").length;
-  const anyRunning = accounts.some((a) => a.status === "running");
+  const errorCount = accounts.filter((a) => accountStatus(a) === "error").length;
+  const anyRunning = accounts.some((a) => accountStatus(a) === "running");
   const combined = accounts.reduce((sum, a) => sum + (a.lastPoints || 0), 0);
   const sched = activeSchedule(status);
 
@@ -195,12 +201,17 @@ function renderAccountRows(root) {
   // started).
   const pendingDelay = context?.status?.pendingDelay;
   const nextAccountEmail = pendingDelay?.nextEmail || null;
+  const liveByEmail = U.liveRunAccountMap(context?.status);
 
   // hide email for screenshots by toggling mask = true
   const MASK_EMAILS = false;
 
   container.innerHTML = accounts
     .map((a) => {
+      const displayStatus = U.accountDisplayStatus(
+        a,
+        liveByEmail.get(a.email.trim().toLowerCase()),
+      );
       const days = daysByKey[a.key] || null;
       let barCell = '<p class="empty-note" style="font-size:0.78rem;margin:0">No history yet</p>';
       
@@ -214,7 +225,7 @@ function renderAccountRows(root) {
       }
 
       const todayGained = days?.find((d) => d.dayKey === todayKey)?.gained ?? null;
-      const variant = checkVariant(a.status);
+      const variant = checkVariant(displayStatus);
       let badgeStatus = { ok: "success", error: "error", running: "running", idle: "idle" }[variant];
       if (badgeStatus !== "running" && nextAccountEmail && a.email === nextAccountEmail) {
         badgeStatus = "pending";
@@ -223,7 +234,7 @@ function renderAccountRows(root) {
       const todayText =
         todayGained != null
           ? `+${todayGained.toLocaleString()}\u202fpts today`
-          : a.status === "running"
+          : displayStatus === "running"
             ? "Running\u2026"
             : "No run today";
 
@@ -245,7 +256,7 @@ function renderAccountRows(root) {
       const dur = a.lastDurationSec != null ? U.fmtDuration(a.lastDurationSec) : null;
 
       const sub =
-        a.status === "running"
+        displayStatus === "running"
           ? `<span class="hero-sub-running">Running\u2026 ${U.escapeHtml(U.fmtRelative(a.lastStartAt))}</span>`
           : `Last Run: ${U.escapeHtml(U.fmtRelative(a.lastEndAt || a.lastStartAt))}${
               dur ? ` \u00b7 <span title="Last run duration">⏱ ${U.escapeHtml(dur)}</span>` : ""
@@ -271,7 +282,7 @@ function renderAccountRows(root) {
                         </span>
                     </div>
                     <div class="hero-acc-sub">${sub}</div>
-                    ${a.status === "error" && a.lastError
+                    ${displayStatus === "error" && a.lastError
                       ? `<div class="hero-acc-error">${U.escapeHtml(
                           a.lastError.length > 120
                             ? `${a.lastError.slice(0, 119)}…`

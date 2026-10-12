@@ -312,6 +312,23 @@ const PILLS = {
   idle: ["pill-idle", "Idle"],
 };
 
+export function liveRunAccountMap(status) {
+  if (!status?.botRunning) return new Map();
+  return new Map(
+    (status.bot?.run?.accounts || [])
+      .filter((account) => account?.email)
+      .map((account) => [account.email.trim().toLowerCase(), account]),
+  );
+}
+
+export function accountDisplayStatus(account, liveAccount) {
+  const watchdogStall =
+    account.status === "error" &&
+    account.lastError === "Run stalled before this account finished";
+  if (watchdogStall && liveAccount?.success == null) return "running";
+  return account.status;
+}
+
 export function pillParts(status) {
   const [cls, label] = PILLS[status] || PILLS.idle;
   return { cls, label };
