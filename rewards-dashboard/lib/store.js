@@ -951,6 +951,16 @@ class Store {
     const code = exit?.code ?? null;
     const signal = exit?.signal ?? null;
 
+    // A completed partial run exits with code 1, and its process-exit status
+    // can reach the dashboard just before the final RUN-END log event. If all
+    // declared accounts already have terminal log events, leave the row open
+    // for RUN-END (or the existing resolved-account auto-close) instead of
+    // misclassifying that normal partial completion as a crash.
+    if (running.totalAccounts != null) {
+      const resolved = this.stmts.accountsResolvedSince.get(running.startTs);
+      if (resolved.n >= running.totalAccounts) return false;
+    }
+
     // A clean exit (code 0, no signal) almost always means the app already
     // logged its own RUN-END line, which the "run-end" event handler above
     // closes with the real accounts/points data. Racing ahead here would
