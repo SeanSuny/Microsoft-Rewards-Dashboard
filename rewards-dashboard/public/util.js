@@ -55,16 +55,20 @@ export function fmtTime(iso) {
   if (!iso) return DASH;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return DASH;
-  return d.toLocaleString("en-US", {
+  const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timeZone || undefined,
     year: "numeric",
-    month: "numeric",
+    month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
     second: "2-digit",
     hour12: true,
-  });
+  }).formatToParts(d);
+  const get = (type) => parts.find((part) => part.type === type)?.value || "";
+  const date = `${get("month")} ${get("day")}, ${get("year")}`;
+  const clock = `${get("hour")}:${get("minute")}:${get("second")} ${get("dayPeriod").toLowerCase()}`;
+  return `${date} ${clock}`;
 }
 
 export function fmtRelative(iso) {
@@ -293,7 +297,7 @@ export function debounce(fn, ms = 250) {
 }
 
 const PILLS = {
-  full: ["pill-success", "Full"],
+  full: ["pill-success", "Complete"],
   success: ["pill-success", "Success"],
   partial: ["pill-warn", "Partial"],
   done: ["pill-success", "Done"],

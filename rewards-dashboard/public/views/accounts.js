@@ -9,6 +9,7 @@ let context = null;
 const launching = new Set();
 const selectedForBatch = new Set();
 const expandedAccounts = new Set();
+const expandedFeatures = new Set();
 let batchRunning = false;
 
 // Two-step delete: a key must be "armed" by a first click before a second
@@ -29,6 +30,23 @@ const SOURCE_LABELS = {
   appReward: "App reward",
   punchcard: "Punchcard",
   searchOnBing: "Search activity",
+  "daily-set": "Daily Set",
+  "more-promotions": "More promotions",
+  "punchcard-child": "Punchcard",
+  "punchcard-data": "Punchcard",
+  "app-data": "App data",
+  "daily-check-in": "Daily Check-In",
+  "read-to-earn": "Read to Earn",
+  "visual-search": "Visual search",
+  "visual search": "Visual search",
+  "bonus-search": "Bonus search",
+  "browser-search-api-report": "Experimental API search",
+  "search-on-bing": "Explore on Bing",
+  "url-reward": "Website reward",
+  "doEnsureStreakProtection": "Streak protection",
+  doActivateSearchPerk: "Search perk",
+  doClaimBonusPoints: "Bonus point claim",
+  doVisualSearch: "Visual search",
 };
 
 function controlState() {
@@ -36,6 +54,12 @@ function controlState() {
   const usable = Boolean(status?.reachable && status?.authOk !== false);
   const running = Boolean(status?.botRunning);
   return { usable, running };
+}
+
+function selectableAccounts() {
+  return (accountsPayload?.accounts || []).filter(
+    (account) => account.configured && Number.isInteger(account.index),
+  );
 }
 
 async function runAccount(account) {
@@ -59,20 +83,11 @@ async function runAccount(account) {
   }
 }
 
-function selectableAccounts() {
-  return (accountsPayload?.accounts || []).filter(
-    (a) => a.configured && Number.isInteger(a.index),
-  );
-}
-
-// Removes an account's stored data (status, history, activity log) from the
-// dashboard's own database. This never touches the bot itself - it's meant
-// for accounts the bot no longer runs (removed from .env) whose dashboard
-// data would otherwise linger forever.
 async function deleteAccount(account) {
   if (!context) return;
 
   deleteArmed.delete(account.key);
+  expandedFeatures.delete(account.key);
   deleting.add(account.key);
   render(rootEl);
   try {
@@ -101,11 +116,12 @@ async function runSelectedAccounts() {
   const excludedAccountIndexes = configured
     .filter((a) => !selectedForBatch.has(a.index))
     .map((a) => a.index);
+  const startBody = excludedAccountIndexes.length ? { excludedAccountIndexes } : {};
 
   batchRunning = true;
   render(rootEl);
   try {
-    await context.api.control("start", { excludedAccountIndexes });
+    await context.api.control("start", startBody);
     context.toast(
       `Started ${selectedIndexes.length}/${configured.length} selected accounts.`,
       "success",
@@ -132,7 +148,7 @@ function renderBatchToolbar(root) {
   const count = selectedForBatch.size;
   const total = configured.length;
 
-  U.$("#accountsSelectedCount", root).textContent = `${count}/${total} selected`;
+  U.$("#accountsSelectedCountValue", root).textContent = `${count}/${total}`;
 
   const allBtn = U.$("#accountsSelectAll", root);
   allBtn.checked = total > 0 && count === total;
@@ -141,29 +157,109 @@ function renderBatchToolbar(root) {
 
   const runBtn = U.$("#accountsRunSelected", root);
   runBtn.disabled = !usable || running || batchRunning || count === 0;
-  runBtn.textContent = batchRunning ? "Starting\u2026" : "Run selected";
+  U.$(".accounts-run-selected-label", runBtn).textContent = batchRunning ? "Starting\u2026" : "Run selected";
 }
 
-function earnableBadge(account) {
+function featureLabel(activity) {
+  const name = cleanFeatureText(activity.activity || activity.name || "Activity");
+  const legacyPromotion = /^(Daily set|More promotions):\s*["“](.+?)["”]$/i.exec(name);
+  const sourceKey = name.charAt(0).toLowerCase() + name.slice(1);
+  const category = SOURCE_LABELS[name] || SOURCE_LABELS[sourceKey] || SOURCE_LABELS[name.toLowerCase()] || legacyPromotion?.[1] || name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]/g, " ").replace(/\b\w/g, char => char.toUpperCase());
+  const title = cleanFeatureText(activity.title || legacyPromotion?.[2] || "");
+  return cleanFeatureText(title ? `${category}: ${title}` : category);
+}
+
+function cleanFeatureText(value) {
+  return String(value).trim().replace(/^[\s"'“”‘’]+|[\s"'“”‘’]+$/g, "");
+}
+
+function featureState(reason, status) {
+  if (/unavailable|not available|quota unavailable|perk unavailable/i.test(reason)) return "unavailable";
+  if (status === "failed" || /\bfailed\b/i.test(reason)) return "failed";
+  if (status === "skipped" || /\bskipped\b/i.test(reason)) return "skipped";
+  return "unconfirmed";
+}
+
+function partialReasonFeatures(reason) {
+  if (!reason) return [];
+  return reason.split(/;\s*/).map(item => {
+    const promotion = /^More promotions:\s*["“](.+?)["”]:\s*(.*)$/i.exec(item);
+    const match = /^([^:]+):\s*(.*)$/.exec(item);
+    if (!match) return null;
+    const promotionTitle = /^More promotions\s*\((.+)\)$/i.exec(match[1].trim());
+    const label = promotion?.[1] || promotionTitle?.[1] || match[1].trim();
+    const detail = promotion?.[2] || match[2];
+    return { label, state: featureState(detail, "unconfirmed"), reason: detail };
+  }).filter(Boolean);
+}
+
+function featureChips(account) {
+  const activities = Array.isArray(account.activities) ? account.activities : [];
+  const earned = new Map();
+  const outstanding = new Map();
+  const activityLabels = new Set();
+
+  function addChip(collection, key, label, detail, reason) {
+    let chip = collection.get(key);
+    if (!chip) {
+      chip = { label, detail, count: 0, reasons: new Set() };
+      collection.set(key, chip);
+    }
+    chip.count += 1;
+    if (reason) chip.reasons.add(reason);
+  }
+
+  for (const activity of activities) {
+    const label = featureLabel(activity);
+    const key = label.toLowerCase();
+    const reason = [activity.reason, activity.message].filter(Boolean).join("; ");
+    const alreadyComplete = activity.status === "skipped" && /already[- ]complete|offer-state-confirmed/i.test(reason);
+    if (activity.status === "confirmed" || activity.status === "completed" || alreadyComplete) {
+      const points = alreadyComplete
+        ? "already complete"
+        : activity.pointsKnown === false || activity.pointsGained == null
+        ? "points unverified"
+        : `${U.fmtSigned(Number(activity.pointsGained))} pts`;
+      addChip(earned, `${key}|${points.toLowerCase()}`, label, points, reason);
+      activityLabels.add(key);
+    } else if (["unconfirmed", "skipped", "failed", "unavailable"].includes(activity.status)) {
+      const state = featureState(reason, activity.status);
+      addChip(outstanding, `${key}|${state}`, label, state, reason);
+      activityLabels.add(key);
+    }
+  }
+
+  for (const item of partialReasonFeatures(account.lastError)) {
+    const label = cleanFeatureText(item.label);
+    const key = label.toLowerCase();
+    if (activityLabels.has(key)) continue;
+    addChip(outstanding, `${key}|${item.state}`, label, item.state, item.reason);
+  }
+
+  if (!earned.size) {
+    for (const [source, points] of Object.entries(account.live?.bySource || {})) {
+      if (Number(points) <= 0) continue;
+      const label = SOURCE_LABELS[source] || source.replace(/[-_]/g, " ").replace(/\b\w/g, char => char.toUpperCase());
+      addChip(earned, `${label.toLowerCase()}|${points}`, label, `${U.fmtSigned(Number(points))} pts`);
+    }
+  }
+
+  const renderChips = (chips, className) => [...chips.values()].map((chip) => {
+    const count = chip.count > 1 ? ` x${chip.count}` : "";
+    const title = [...chip.reasons].join("; ") || chip.label;
+    return `<span class="point-source ${className}" title="${U.escapeAttr(title)}"><strong>${U.escapeHtml(chip.label)}</strong> ${U.escapeHtml(chip.detail + count)}</span>`;
+  });
+
+  return [...renderChips(earned, "point-source--complete"), ...renderChips(outstanding, "point-source--target")].join("");
+}
+
+function earnableChips(account) {
   const earnable = account.earnable || account.live?.earnable;
-  const total = earnable
-    ? Object.values(earnable).reduce((sum, points) => sum + (Number(points) || 0), 0)
-    : 0;
-  if (total <= 0) return "";
-  return `<span class="point-source point-source--target"><strong>Earnable</strong> ${U.escapeHtml(U.fmtNumber(total))}</span>`;
-}
-
-// Only sources that actually earned something today — ten "+0" chips per
-// account is noise, not detail.
-function sourceBreakdown(account) {
-  const bySource = account.live?.bySource || {};
-  return Object.entries(SOURCE_LABELS)
-    .filter(([source]) => Number(bySource[source]) > 0)
-    .map(
-      ([source, label]) =>
-        `<span class="point-source"><strong>${U.escapeHtml(label)}</strong> ${U.escapeHtml(U.fmtSigned(Number(bySource[source])))}</span>`,
-    )
-    .join("");
+  if (!earnable) return "";
+  const labels = { mobile: "Mobile", browser: "Desktop", app: "App" };
+  return Object.entries(labels).filter(([key]) => Number(earnable[key]) > 0).map(([key, label]) =>
+    `<span class="point-source point-source--target"><strong>${label}</strong> ${U.escapeHtml(U.fmtNumber(earnable[key]))} earnable</span>`,
+  ).join("");
 }
 
 function protectionPresentation(account) {
@@ -272,61 +368,6 @@ function detailGroups(a, protection) {
     .join("")}</div>`;
 }
 
-// Mirrors overview.js's statCard icon convention (stat-icon-check /
-// -running / -alert icon-alert-active / -idle with \u2713 / \u25CF / ! / \u2013)
-// so an account's live status reads the same way here as it does there.
-function statusIconParts(statusKey) {
-  switch (statusKey) {
-    case "success":
-    case "done":
-      return { cls: "stat-icon-check", icon: "\u2713", label: "Success" };
-    case "running":
-    case "starting":
-    case "stopping":
-      return { cls: "stat-icon-running", icon: "\u25CF", label: U.pillParts(statusKey).label };
-    case "pending":
-      return { cls: "stat-icon-pending", icon: "\u25CF", label: U.pillParts(statusKey).label };
-    case "error":
-    case "crashed":
-    case "interrupted":
-    case "stopped":
-      return { cls: "stat-icon-alert icon-alert-active", icon: "!", label: U.pillParts(statusKey).label };
-    default:
-      return { cls: "stat-icon-idle", icon: "\u2013", label: "Idle" };
-  }
-}
-
-function renderLastRunRow(account, statusKey) {
-  let status;
-  let details;
-
-  if (statusKey === "pending") {
-    status = "pending";
-    details = "Waiting for this account to start.";
-  } else if (["running", "starting", "stopping"].includes(statusKey)) {
-    status = "running";
-    details = "Run is in progress.";
-  } else if (account.status === "success") {
-    if (account.lastError) {
-      status = "partial";
-      details = 'Some enabled features did not complete; they may be unavailable or unsuccessful. <a href="#logs">Check logs</a>.';
-    } else {
-      status = "full";
-      details = "All expected features completed.";
-    }
-  } else if (account.status === "error") {
-    status = "error";
-    details = 'Run exited with errors or was interrupted. <a href="#logs">Check logs</a>.';
-  } else {
-    return "";
-  }
-
-  return `<div class="account-today-row">
-      <span class="account-today-label">Last run</span>
-      <div class="account-today-chips">${U.statusPill(status)}<span>${details}</span></div>
-    </div>`;
-}
-
 function renderAccountPanel(a, live) {
   const protection = protectionPresentation(a);
   const { usable, running } = controlState();
@@ -349,19 +390,18 @@ function renderAccountPanel(a, live) {
 
   const runButton =
     a.configured && Number.isInteger(a.index)
-      ? `<button type="button" class="btn btn-primary btn-small" data-run-account="${a.index}" ${!usable || running || launching.has(a.index) ? "disabled" : ""
-      } title="Run only ACCOUNT_${a.index}">${launching.has(a.index) ? "Starting\u2026" : "Run only"}</button>`
+      ? `<button type="button" class="btn btn-primary btn-small acc-run-button" data-run-account="${a.index}" aria-label="Run only ACCOUNT_${a.index}" ${!usable || running || launching.has(a.index) ? "disabled" : ""
+      } title="Run only ACCOUNT_${a.index}"><i class="ph ph-play acc-run-icon" aria-hidden="true"></i><span class="acc-run-label">${launching.has(a.index) ? "Starting\u2026" : "Run only"}</span></button>`
       : "";
 
   const selectCheckbox =
     a.configured && Number.isInteger(a.index)
       ? `<label class="check acc-batch-select" title="Include ACCOUNT_${a.index} in a batch run">
-          <input type="checkbox" data-select-account="${a.index}" ${selectedForBatch.has(a.index) ? "checked" : ""}>
+          <input type="checkbox" data-select-account="${a.index}" aria-label="Select ACCOUNT_${a.index} for a batch run" ${selectedForBatch.has(a.index) ? "checked" : ""}>
           <span>Select</span>
         </label>`
       : "";
 
-  const { cls: statusIconCls, icon: statusIcon, label: statusLabel } = statusIconParts(statusKey);
   const isExpanded = expandedAccounts.has(a.key);
   const detailsId = `acc-details-${U.escapeAttr(a.key)}`;
 
@@ -369,48 +409,70 @@ function renderAccountPanel(a, live) {
   const deleteBlocked = a.status === "running" || launching.has(a.index);
   const deleteButton = deleteArmed.has(a.key)
     ? `<span class="acc-delete-confirm">
-        <button type="button" class="btn btn-small" data-cancel-delete="${U.escapeAttr(a.key)}" ${isDeleting ? "disabled" : ""}>Cancel</button>
-        <button type="button" class="btn btn-danger btn-small" data-confirm-delete="${U.escapeAttr(a.key)}" ${isDeleting ? "disabled" : ""} title="Permanently remove this account and its history from the dashboard">
-            ${isDeleting ? "Removing\u2026" : "Are you sure?"}
+        <button type="button" class="btn btn-icon btn-small" data-cancel-delete="${U.escapeAttr(a.key)}" aria-label="Cancel delete" ${isDeleting ? "disabled" : ""} title="Cancel delete"><i class="ph ph-x" aria-hidden="true"></i></button>
+        <button type="button" class="btn btn-danger btn-icon btn-small" data-confirm-delete="${U.escapeAttr(a.key)}" aria-label="Confirm delete account" ${isDeleting ? "disabled" : ""} title="Permanently remove this account and its history from the dashboard">
+          <i class="ph ph-trash" aria-hidden="true"></i>
         </button>
       </span>`
-    : `<button type="button" class="btn btn-danger btn-small" data-arm-delete="${U.escapeAttr(a.key)}" ${deleteBlocked ? "disabled" : ""} title="${deleteBlocked ? "The account must be idle to delete it" : "Remove this account and its history from the dashboard"}">Delete</button>`;
+    : `<button type="button" class="btn btn-danger btn-icon btn-small" data-arm-delete="${U.escapeAttr(a.key)}" aria-label="Delete account" ${deleteBlocked ? "disabled" : ""} title="${deleteBlocked ? "The account must be idle to delete it" : "Remove this account and its history from the dashboard"}"><i class="ph ph-trash" aria-hidden="true"></i></button>`;
 
-  const chips = [
-    protection
-      ? `<span class="pill ${protection.pillClass}" title="${U.escapeAttr(protection.streak)}; streak protection is ${protection.state.toLowerCase()}; ${U.escapeAttr(protection.days)}">Protection ${protection.state} \u00b7 ${a.streakProtectionRemainingDays == null ? "days unavailable" : `${a.streakProtectionRemainingDays} day${a.streakProtectionRemainingDays === 1 ? "" : "s"} left`}</span>`
-      : "",
-    earnableBadge(live || {}),
-    sourceBreakdown(live || {}),
-  ]
-    .filter(Boolean)
-    .join("");
-  const lastRunRow = renderLastRunRow(a, statusKey);
+  const protectionChip = protection
+    ? `<span class="account-rail-icon ${protection.pillClass}" role="img" aria-label="Streak protection ${protection.state.toLowerCase()}" title="Streak protection is ${protection.state.toLowerCase()}; ${U.escapeAttr(protection.days)}"><i class="ph ${a.streakProtectionEnabled ? "ph-shield-check" : "ph-shield"}" aria-hidden="true"></i></span>`
+    : "";
+  const status = U.pillParts(statusKey);
+  const statusIcons = {
+    full: "ph-check-circle",
+    success: "ph-check-circle",
+    partial: "ph-warning-circle",
+    done: "ph-check-circle",
+    error: "ph-x-circle",
+    crashed: "ph-x-circle",
+    interrupted: "ph-pause-circle",
+    stopped: "ph-pause-circle",
+    running: "ph-circle-notch",
+    starting: "ph-circle-notch",
+    stopping: "ph-stop-circle",
+    pending: "ph-clock",
+    idle: "ph-minus-circle",
+  };
+  const statusRail = `
+    <aside class="account-status-rail" aria-label="Account status">
+      <span class="account-rail-icon ${status.cls}" role="img" aria-label="${U.escapeAttr(status.label)}" title="${U.escapeAttr(status.label)}"><i class="ph ${statusIcons[statusKey] || statusIcons.idle}" aria-hidden="true"></i></span>
+    </aside>`;
+  const featureChipsHtml = [
+    featureChips({ ...(live || {}), lastError: a.lastError || live?.error }),
+    earnableChips(live || {}),
+  ].filter(Boolean).join("");
+  const featuresOpen = expandedFeatures.has(a.key);
+  const featureDetails = `<details class="account-feature-details" data-feature-details="${U.escapeAttr(a.key)}" ${featuresOpen ? "open" : ""}>
+      <summary><span class="acc-detail-toggle account-feature-caret" aria-hidden="true">\u25b8</span><span>Activity Status</span></summary>
+      <div class="account-feature-chips">${featureChipsHtml || '<span class="point-source">No feature results reported</span>'}</div>
+    </details>`;
 
   return `
     <div class="panel account-detail-panel">
-        <div class="panel-head">
+      <div class="account-primary-row">
+        ${statusRail}
+        <div class="account-card-main">
+          <div class="panel-head">
             <h2>
                 <button type="button" class="acc-detail-toggle" data-toggle-details="${U.escapeAttr(a.key)}" aria-expanded="${isExpanded}" aria-controls="${detailsId}" title="${isExpanded ? "Collapse details" : "Expand details"}">\u25b8</button>
-                <span class="acc-status-icon ${statusIconCls}" role="img" aria-label="${U.escapeAttr(statusLabel)}" title="${U.escapeAttr(statusLabel)}">${statusIcon}</span>${U.escapeHtml(a.email)}
+              ${U.escapeHtml(a.email)}
             </h2>
             ${a.index != null ? `<span class="tag-mini acc-tag-account-id">ACCOUNT_${a.index}</span>` : ""}
             ${a.configured ? "" : '<span class="tag-mini">unconfigured</span>'}
-            <span class="acc-detail-actions">
-                <span class="acc-status-pill">${U.statusPill(statusKey)}</span>
-                ${selectCheckbox}
-                ${runButton}
-                ${deleteButton}
-            </span>
+          </div>
         </div>
-        <div class="panel-body" id="${detailsId}" ${isExpanded ? "" : "hidden"}>
-            ${detailGroups(a, protection)}
-        </div>
-        ${chips ? `<div class="account-today-row">
-            <span class="account-today-label">Today</span>
-            <div class="account-today-chips">${chips}</div>
-        </div>` : ""}
-        ${lastRunRow}
+        <span class="acc-detail-actions">${selectCheckbox}${runButton}</span>
+      </div>
+      <div class="panel-body account-detail-body" id="${detailsId}" ${isExpanded ? "" : "hidden"}>
+        ${detailGroups(a, protection)}
+      </div>
+      <div class="account-secondary-row">
+        <aside class="account-protection-rail" aria-label="Streak protection">${protectionChip}</aside>
+        ${featureDetails}
+        <div class="acc-feature-actions">${deleteButton}</div>
+      </div>
     </div>`;
 }
 
@@ -421,7 +483,6 @@ function render(root) {
   const liveByEmail = new Map(
     (context?.status?.bot?.run?.accounts || []).map((la) => [la.email, la]),
   );
-
   const errEl = U.$("#accountsError", root);
   if (errEl) {
     errEl.hidden = !accountsPayload?.apiError;
@@ -453,6 +514,14 @@ function render(root) {
       if (input.checked) selectedForBatch.add(index);
       else selectedForBatch.delete(index);
       renderBatchToolbar(root);
+    }),
+  );
+
+  container.querySelectorAll("details[data-feature-details]").forEach((details) =>
+    details.addEventListener("toggle", () => {
+      const key = details.dataset.featureDetails;
+      if (details.open) expandedFeatures.add(key);
+      else expandedFeatures.delete(key);
     }),
   );
 
@@ -508,8 +577,8 @@ export default {
                       <input type="checkbox" id="accountsSelectAll">
                       <span>Select all</span>
                   </label>
-                  <span class="hint" id="accountsSelectedCount">0/0 selected</span>
-                  <button type="button" class="btn btn-primary btn-small" id="accountsRunSelected" disabled>Run selected</button>
+                  <span class="hint" id="accountsSelectedCount"><span id="accountsSelectedCountValue">0/0</span><span class="accounts-selected-label"> selected</span></span>
+                  <button type="button" class="btn btn-primary btn-small accounts-run-selected" id="accountsRunSelected" aria-label="Run selected accounts" title="Run selected accounts" disabled><i class="ph ph-play accounts-run-selected-icon" aria-hidden="true"></i><span class="accounts-run-selected-label">Run selected</span></button>
               </div>
           </div>
       </div>

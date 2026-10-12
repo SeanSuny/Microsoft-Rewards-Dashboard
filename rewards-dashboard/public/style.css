@@ -28,6 +28,7 @@
 
   /* Layout */
   --radius: 12px;
+  --space-account-columns: 0.85rem;
   --shadow: 0 1px 2px rgba(20, 22, 30, 0.06), 0 1px 1px rgba(20, 22, 30, 0.04);
   --mono:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
@@ -1670,9 +1671,71 @@ tbody tr:hover {
 
 /* Accounts */
 
-/* Account detail panel header / groups */
+/* Account cards and status rail */
+.account-detail-panel {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr) max-content;
+  column-gap: var(--space-account-columns);
+  row-gap: 0.65rem;
+  align-items: center;
+}
+.account-primary-row,
+.account-secondary-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-width: 0;
+}
+.account-card-main {
+  min-width: 0;
+}
+.account-status-rail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.account-protection-rail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.account-rail-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  flex: 0 0 1.55rem;
+  border-radius: 50%;
+  font-size: 0.9rem;
+}
+.account-rail-icon.pill-success {
+  background: var(--positive-bg);
+  color: var(--positive);
+}
+.account-rail-icon.pill-error {
+  background: var(--negative-bg);
+  color: var(--negative);
+}
+.account-rail-icon.pill-running,
+.account-rail-icon.pill-warn {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+.account-rail-icon.pill-pending {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+.account-rail-icon.pill-idle {
+  background: var(--border);
+  color: var(--text-muted);
+}
+
+/* Account details */
 .account-detail-panel .panel-head {
   align-items: center;
+  margin-bottom: 0;
 }
 .account-detail-panel .panel-head h2 {
   display: flex;
@@ -1682,10 +1745,11 @@ tbody tr:hover {
 .account-detail-panel .panel-head h2 [class*="stat-icon-"] {
   flex-shrink: 0;
 }
-.acc-status-icon {
-  display: none;
+.account-detail-body {
+  grid-column: 2 / -1;
+  min-width: 0;
+  padding: 0;
 }
-
 /* Details caret - rotates from collapsed (▸) to expanded (▾); the details
    panel below is toggled via its plain `hidden` attribute (see global
    [hidden] rule), so no extra open/closed classes are needed. */
@@ -1713,8 +1777,11 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  justify-self: end;
 }
-
+.acc-run-icon {
+  display: none;
+}
 .acc-delete-confirm {
   display: inline-flex;
   align-items: center;
@@ -1747,6 +1814,9 @@ tbody tr:hover {
   gap: 0.6rem;
   flex-wrap: wrap;
 }
+.accounts-run-selected-icon {
+  display: none;
+}
 
 .acc-detail-groups {
   display: grid;
@@ -1777,41 +1847,46 @@ tbody tr:hover {
   font-weight: 600;
 }
 
-/* Account detail panel body / today row */
+/* Account details and activity status */
 #accountsContainer {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
 }
 
-.account-detail-panel .panel-body {
-  padding: 0;
+.account-feature-details {
+  min-width: 0;
 }
-.account-today-row {
+.account-feature-details > summary {
   display: flex;
-  gap: 0.5rem;
-  align-items: baseline;
-  flex-wrap: wrap;
-  margin-top: 1rem;
-  padding: 0;
-}
-
-.account-today-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.account-today-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
   align-items: center;
+  gap: 0.4rem;
+  list-style: none;
+  cursor: pointer;
+  color: var(--text-muted);
 }
-
+.account-feature-details > summary::-webkit-details-marker {
+  display: none;
+}
+.account-feature-caret {
+  transition: transform 0.12s ease;
+}
+.account-feature-details[open] > summary .account-feature-caret {
+  transform: rotate(90deg);
+}
+.account-feature-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+.acc-feature-actions {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 0.4rem;
+}
 /* Earnable / per-source chips */
 .point-source {
   border: 1px solid var(--border);
@@ -1835,6 +1910,13 @@ tbody tr:hover {
 }
 .point-source--target strong {
   color: var(--amber);
+}
+.point-source--complete {
+  background: var(--surface);
+  color: var(--text);
+}
+.point-source--complete strong {
+  color: var(--text);
 }
 
 
@@ -1916,6 +1998,16 @@ tbody tr:hover {
   text-overflow: ellipsis;
   color: var(--accent);
   font-weight: 600;
+  white-space: nowrap;
+  padding-top: 0.1rem;
+}
+
+.log-account {
+  flex-shrink: 0;
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
   white-space: nowrap;
   padding-top: 0.1rem;
 }
@@ -2357,6 +2449,20 @@ tbody tr:hover {
 /* App shell */
 
 /* Header bar / tab bar / control strip / layout */
+@media (min-width: 769px) {
+  .control-strip {
+    flex-wrap: nowrap;
+  }
+  .ctl-state {
+    width: auto;
+    flex: 1 1 auto;
+  }
+  .ctl-actions {
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+}
+
 @media (max-width: 768px) {
   .topbar {
       flex-direction: column;
@@ -2629,15 +2735,46 @@ tbody tr:hover {
 
 /* Accounts */
 
-/* Detail panel header: compact icon instead of tag + full pill */
+/* Compact account controls and run-only actions on mobile. */
 @media (max-width: 768px) {
-  .acc-status-icon {
-      display: inline-flex;
-    }
+  .account-detail-panel {
+    --space-account-columns: 0.5rem;
+  }
+  .batch-select-header {
+    flex-wrap: nowrap;
+    gap: 0.4rem 0.6rem;
+  }
+  .accounts-selected-label,
+  .accounts-run-selected-label {
+    display: none;
+  }
+  .batch-select-controls {
+    gap: 0.4rem;
+    flex-wrap: nowrap;
+  }
+  #accountsSelectedCount {
+    white-space: nowrap;
+  }
+  .accounts-run-selected {
+    width: 34px;
+    flex: 0 0 34px;
+    padding: 0;
+  }
+  .accounts-run-selected-icon {
+    display: inline-block;
+  }
   .acc-tag-account-id,
-  .acc-status-pill {
-      display: none;
-    }
+  .acc-batch-select span,
+  .acc-run-label {
+    display: none;
+  }
+  .acc-run-button {
+    width: 34px;
+    padding: 0;
+  }
+  .acc-run-button .acc-run-icon {
+    display: inline-block;
+  }
 }
 
 
@@ -2652,6 +2789,9 @@ tbody tr:hover {
   .log-tag {
       width: 5.5rem;
     }
+  .log-account {
+      max-width: 7rem;
+    }
   .toolbar {
       gap: 0.4rem;
     }
@@ -2660,9 +2800,6 @@ tbody tr:hover {
 /* Log tag (very small phones) */
 @media (max-width: 420px) {
   .log-tag {
-      display: none;
-    }
-  .log-date {
       display: none;
     }
   .log-line {
