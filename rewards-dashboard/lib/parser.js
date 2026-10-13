@@ -61,6 +61,13 @@ const WRAPPER_LINE_RE = /^\[[^\]]*\]\s\[run_daily\.sh\]\s([\s\S]*)$/;
 const WRAPPER_LOCK_ACQUIRED_RE =
   /^Lock acquired successfully\s\(PID:\s*(\d+)\)$/;
 const WRAPPER_LOCK_RELEASED_RE = /^Lock released\s\(PID:\s*(\d+)\)$/;
+// Optional randomized delay before the run actually launches (the seconds
+// figure is authoritative; the "N minutes" part is rounded).
+const WRAPPER_SLEEP_RE = /^Sleeping for [^(]*\((\d+)\sseconds?\)$/;
+const WRAPPER_STARTING_RE = /^Starting script\.\.\.$/;
+// src/control-api/trigger.js, when skipIfRunning is on and /start returns 409.
+const TRIGGER_SKIPPED_RE =
+  /^\[trigger\]\sA run is already in progress\.\sSkipping as configured\.$/;
 // "Script finished" is printed right before the wrapper's natural exit
 // (which is what triggers the EXIT trap that logs "Lock released"). Kept as
 // its own event kind (see store.js) rather than folded into "Lock released",
@@ -350,6 +357,19 @@ function parseLine(rawLine) {
  * wrapper lines that aren't one of the specific lifecycle events we track.
  */
 function parseWrapperLine(dockerTs, clean) {
+  if (TRIGGER_SKIPPED_RE.test(clean.trim())) {
+    return {
+      ts: dockerTs,
+      userName: "run_daily.sh",
+      level: "warn",
+      platform: "MAIN",
+      title: "WRAPPER",
+      message: "Scheduled run skipped: a run was already in progress",
+      raw: clean,
+      kind: "wrapper-run-skipped",
+    };
+  }
+
   const wm = WRAPPER_LINE_RE.exec(clean);
   if (!wm) return null;
   const message = wm[1];
@@ -371,6 +391,14 @@ function parseWrapperLine(dockerTs, clean) {
   const released = WRAPPER_LOCK_RELEASED_RE.exec(message);
   if (released)
     return { ...base, kind: "wrapper-lock-released", pid: released[1] };
+
+  const sleep = WRAPPER_SLEEP_RE.exec(message);
+  if (sleep)
+    return { ...base, kind: "wrapper-sleep", seconds: Number(sleep[1]) };
+
+  if (WRAPPER_STARTING_RE.test(message)) {
+    return { ...base, kind: "wrapper-starting" };
+  }
 
   if (WRAPPER_SCRIPT_COMPLETED_RE.test(message)) {
     return { ...base, kind: "wrapper-script-completed" };

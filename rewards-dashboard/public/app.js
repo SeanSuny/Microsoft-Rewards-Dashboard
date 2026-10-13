@@ -71,6 +71,7 @@ const state = {
 
 const mounted = new Set();
 let refreshTimer = null;
+let sleepWasShown = false;
 let knownCodeKeys = new Set();
 
 const ctx = {
@@ -325,8 +326,14 @@ function renderControlStrip() {
   const usable = Boolean(s?.reachable && s?.authOk !== false);
   const running = Boolean(s?.botRunning);
 
+  const sleepSec = U.sleepRemainingSec(s);
+  const wasSleeping = sleepWasShown;
+  sleepWasShown = sleepSec != null;
+  if (wasSleeping && !sleepWasShown) redrawActive();
   const { cls, label } = U.pillParts(
-    outcome || (botState === "unknown" ? "idle" : botState),
+    sleepSec != null
+      ? "sleeping"
+      : outcome || (botState === "unknown" ? "idle" : botState),
   );
   els.ctlPill.className = `pill ${cls}`;
   els.ctlPill.textContent = label;
@@ -334,7 +341,9 @@ function renderControlStrip() {
   const bot = s?.bot;
   const run = bot?.run;
   const bits = [];
-  if (running) {
+  if (sleepSec != null) {
+    bits.push(`run starts in ${U.fmtDuration(sleepSec)}`);
+  } else if (running) {
     if (bot?.pid) bits.push(`pid ${bot.pid}`);
     if (bot?.startedAt) bits.push(`started ${U.fmtRelative(bot.startedAt)}`);
     if (run?.accountsTotal)
@@ -485,6 +494,12 @@ initTabs();
 connectStream();
 
 setInterval(renderCodes, 1000);
+setInterval(() => {
+  if (U.sleepRemainingSec(state.status) != null || sleepWasShown) {
+    renderControlStrip();
+    currentView()?.onTick?.(ctx);
+  }
+}, 1000);
 window.addEventListener("focus", () => refreshActive(true));
 window.addEventListener(
   "resize",

@@ -99,6 +99,17 @@ export function fmtUptime(sec) {
   return fmtDuration(sec);
 }
 
+// Whole seconds left in the wrapper's pre-run sleep, or null when not
+// sleeping (no sleep reported, already elapsed, or the bot is running).
+export function sleepRemainingSec(status) {
+  const sleep = status?.pendingSleep;
+  if (!sleep || status?.botRunning) return null;
+  const remaining = Math.ceil(
+    sleep.seconds - (Date.now() - Date.parse(sleep.sinceTs)) / 1000,
+  );
+  return Number.isFinite(remaining) && remaining > 0 ? remaining : null;
+}
+
 // day bucket
 
 let timeZone = null;
@@ -311,6 +322,7 @@ const PILLS = {
   starting: ["pill-running", "Starting"],
   stopping: ["pill-warn", "Stopping"],
   pending: ["pill-pending", "Pending"],
+  sleeping: ["pill-pending", "Sleeping"],
   idle: ["pill-idle", "Idle"],
 };
 

@@ -49,6 +49,9 @@ const ACCOUNT_STATUS_BY_OUTCOME = {
 // exists to bound a truly abandoned run, not to police normal durations.
 const RUN_STALE_BACKSTOP_MS = 20 * 60 * 60 * 1000;
 
+// Extra time a pre-run sleep stays shown past its nominal end.
+const SLEEP_EXPIRY_SLACK_MS = 2 * 60 * 1000;
+
 // How long to wait after the last ACCOUNT-END/ACCOUNT-ERROR before assuming
 // the bot's own RUN-END is never coming and closing the run ourselves. The
 // bot normally logs RUN-END within ~1s of the last account finishing; this
@@ -172,6 +175,8 @@ class Store {
     // Ephemeral (not persisted) - transient "waiting between accounts" state
     // is only meaningful while live, unlike everything else in this class.
     this._pendingDelay = null;
+    this._pendingSleep = null;
+    this._wrapperSkipped = false;
 
     // Completion evidence for the currently running process. Deliberately
     // NOT persisted - describes evidence from the live log stream only. If
@@ -453,6 +458,20 @@ class Store {
     return this._pendingDelay;
   }
 
+  // The wrapper's optional randomized pre-run sleep. Dropped once it has
+  // elapsed (with slack for log lag) so a missed "Starting script..." line
+  // can't leave it showing forever.
+  get pendingSleep() {
+    const s = this._pendingSleep;
+    if (!s) return null;
+    const endMs = Date.parse(s.sinceTs) + s.seconds * 1000;
+    if (Number.isFinite(endMs) && Date.now() > endMs + SLEEP_EXPIRY_SLACK_MS) {
+      this._pendingSleep = null;
+      return null;
+    }
+    return s;
+  }
+
   _resetCompletionEvidence() {
     this._workersExitedCleanly = false;
     this._workersExitedAt = null;
@@ -703,6 +722,7 @@ class Store {
         // 3) - nothing will ever complete that roster, so fall back to a
         // generous time backstop just for that case.
         this._recentRunEnd = null;
+        this._pendingSleep = null;
         this._resetCompletionEvidence();
 
         const alreadyRunning = this.stmts.findRunningRun.get();
@@ -783,6 +803,11 @@ class Store {
         break;
       }
       case "wrapper-script-completed": {
+        if (this._wrapperSkipped) {
+          // The skipped wrapper reports success without having run anything.
+          this._pushActivity(event);
+          break;
+        }
         // "Script completed successfully (via API)." is an explicit,
         // unambiguous positive completion signal.
         this._successfulWrapperCompletion = true;
@@ -797,7 +822,7 @@ class Store {
         // including right after "ERROR: Script failed!". Only count it as
         // completion evidence if no failure has been seen yet this run, so
         // it can't silently resurrect a run we already know failed.
-        if (!this._wrapperFailureSeen) {
+        if (!this._wrapperFailureSeen && !this._wrapperSkipped) {
           this._successfulWrapperCompletion = true;
           this._successfulWrapperCompletionAt = event.ts;
           this._tryCloseFromSuccessfulProcessCompletion(event.ts);
@@ -816,13 +841,33 @@ class Store {
         break;
       }
       case "wrapper-lock-acquired": {
+        this._wrapperSkipped = false;
         this._pushActivity({
           ...event,
           message: `Cron run starting (lock acquired, PID ${event.pid})`,
         });
         break;
       }
+      case "wrapper-run-skipped": {
+        this._wrapperSkipped = true;
+        this._pendingSleep = null;
+        this._pushActivity(event);
+        break;
+      }
+      case "wrapper-sleep": {
+        this._pendingSleep = { seconds: event.seconds, sinceTs: event.ts };
+        this._pushActivity({
+          ...event,
+          message: `Run delayed: sleeping ${event.seconds}s before starting`,
+        });
+        break;
+      }
+      case "wrapper-starting": {
+        this._pendingSleep = null;
+        break;
+      }
       case "wrapper-lock-released": {
+        this._pendingSleep = null;
         // Fires via run_daily.sh's bash EXIT trap, including after a
         // crash/kill - so by itself it's never proof of success. If worker +
         // wrapper evidence already proves a clean completion, this may be
@@ -839,10 +884,11 @@ class Store {
           event.ts,
         );
 
-        if (!closedSuccessfully && this.stmts.findRunningRun.get()) {
+        if (!closedSuccessfully && this.stmts.findRunningRun.get() && !this._wrapperSkipped) {
           this._lockReleasedAt = event.ts;
           this._scheduleSettleCheck();
         }
+        this._wrapperSkipped = false;
 
         if (event.pid) {
           this._pushActivity({

@@ -209,6 +209,7 @@ function renderAccountRows(root) {
   // started).
   const pendingDelay = context?.status?.pendingDelay;
   const nextAccountEmail = pendingDelay?.nextEmail || null;
+  const sleepSec = U.sleepRemainingSec(context?.status);
   const liveByEmail = U.runAccountMap(context?.status);
 
   // hide email for screenshots by toggling mask = true
@@ -246,6 +247,7 @@ function renderAccountRows(root) {
       if (badgeStatus !== "running" && nextAccountEmail && a.email === nextAccountEmail) {
         badgeStatus = "pending";
       }
+      if (sleepSec != null && a.configured) badgeStatus = "sleeping";
 
       const todayText =
         todayGained != null
@@ -386,6 +388,24 @@ function renderRunHeader(root, status) {
 
   progressBox.hidden = false;
 
+  const sleepSec = U.sleepRemainingSec(status);
+  progressBox.classList.toggle("sleeping", sleepSec != null);
+  if (sleepSec != null) {
+    const sleep = status.pendingSleep;
+    const pct = Math.min(
+      100,
+      Math.max(0, Math.round(((sleep.seconds - sleepSec) / sleep.seconds) * 100)),
+    );
+    titleEl.textContent = "Run sleeping";
+    U.renderTicker(
+      metaEl,
+      `starts in ${U.fmtDuration(sleepSec)} \u00b7 ${U.fmtDuration(sleep.seconds)} delay`,
+    );
+    bar.style.width = `${pct}%`;
+    bar.parentElement.setAttribute("aria-valuenow", String(pct));
+    progressBox.classList.remove("idle");
+    return;
+  }
   const progressWrap = bar.parentElement;
   const total = Number(run?.accountsTotal) || 0;
   const runAccounts = Array.isArray(run?.accounts) ? run.accounts : [];
@@ -510,6 +530,12 @@ export default {
     renderStats(rootEl, context.status);
     renderRunHeader(rootEl, context.status);
     renderAccountRows(rootEl);
+  },
+
+  onTick(ctx) {
+    context = ctx || context;
+    if (!mounted || !data) return;
+    renderRunHeader(rootEl, context.status);
   },
 
   onState(status, ctx) {

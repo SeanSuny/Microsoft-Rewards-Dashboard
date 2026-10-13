@@ -961,6 +961,11 @@ tbody tr:hover {
   transition: width 0.35s ease;
 }
 
+/* Pre-run sleep reuses the pending palette */
+.run-progress-box.sleeping .progress-bar {
+  background: var(--energy-high-accent);
+}
+
 /* Inline SVG charts (used by Overview + Runs) */
 .chart-wrap {
   position: relative;

@@ -399,7 +399,9 @@ function renderAccountPanel(a, live) {
   const nextAccountEmail = context?.status?.pendingDelay?.nextEmail || null;
   const statusKey = launching.has(a.index)
     ? "starting"
-    : displayStatus !== "running" && nextAccountEmail && a.email === nextAccountEmail
+    : U.sleepRemainingSec(context?.status) != null && a.configured
+      ? "sleeping"
+      : displayStatus !== "running" && nextAccountEmail && a.email === nextAccountEmail
       ? "pending"
       : displayStatus;
 
@@ -449,6 +451,7 @@ function renderAccountPanel(a, live) {
     starting: "ph-circle-notch",
     stopping: "ph-stop-circle",
     pending: "ph-clock",
+    sleeping: "ph-moon",
     stalled: "ph-pause-circle",
     idle: "ph-minus-circle",
   };

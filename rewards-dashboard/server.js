@@ -143,6 +143,7 @@ function currentState() {
     stream: hub.stats,
     lastEventAt: store.lastTs,
     pendingDelay: store.pendingDelay,
+    pendingSleep: store.pendingSleep,
     codes: pendingLoginCodes.list(),
   };
 }
