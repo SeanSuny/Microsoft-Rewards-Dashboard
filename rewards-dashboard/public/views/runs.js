@@ -77,7 +77,7 @@ function renderRuns() {
             )
             : "\u2013";
       return `<tr>
-                <td>${U.statusPill(r.status)}</td>
+                <td>${U.statusPill(r.status, r.outcome ? `Script reported: ${r.outcome}` : "")}</td>
                 <td>${U.escapeHtml(U.fmtDateTime(r.startTs || r.endTs))}</td>
                 <td>${U.escapeHtml(duration)}</td>
                 <td class="num">${r.accountsProcessed != null ? U.fmtNumber(r.accountsProcessed) : "\u2013"}${r.totalAccounts ? ` / ${U.fmtNumber(r.totalAccounts)}` : ""}</td>

@@ -300,11 +300,13 @@ const PILLS = {
   full: ["pill-success", "Complete"],
   success: ["pill-success", "Success"],
   partial: ["pill-warn", "Partial"],
+  skipped: ["pill-idle", "Skipped"],
   done: ["pill-success", "Done"],
   error: ["pill-error", "Error"],
   crashed: ["pill-error", "Crashed"],
   interrupted: ["pill-warn", "Interrupted"],
   stopped: ["pill-warn", "Stopped"],
+  stalled: ["pill-warn", "Stalled"],
   running: ["pill-running", "Running"],
   starting: ["pill-running", "Starting"],
   stopping: ["pill-warn", "Stopping"],
@@ -345,7 +347,8 @@ export function pillParts(status) {
   return { cls, label };
 }
 
-export function statusPill(status) {
+export function statusPill(status, title = "") {
   const { cls, label } = pillParts(status);
-  return `<span class="pill ${cls}">${label}</span>`;
+  const attr = title ? ` title="${escapeAttr(title)}"` : "";
+  return `<span class="pill ${cls}"${attr}>${label}</span>`;
 }

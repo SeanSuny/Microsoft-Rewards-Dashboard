@@ -9,6 +9,7 @@ const { ControlApiClient, entryToDockerLine } = require("./lib/apiClient");
 const { EventHub } = require("./lib/eventHub");
 const { parseLine } = require("./lib/parser");
 const { Store } = require("./lib/store");
+const { completedBotOutcome } = require("./lib/outcome");
 const { describeCron, isValidCron, nextRun } = require("./lib/cron");
 const { Scheduler } = require("./lib/scheduler");
 const { transformThemeModule } = require("./lib/tsLite");
@@ -114,30 +115,6 @@ let lastLogId = null;
 let lastHealthUptime = null;
 let lastHealthyCheckedAt = null;
 
-function completedBotOutcome(bot) {
-  const run = bot?.run;
-  if (!run?.finished) return null;
-
-  const exit = bot.lastExit;
-  if (
-    run.status === "stopped" ||
-    run.status === "cancelled" ||
-    exit?.signal ||
-    [130, 137, 143].includes(exit?.code)
-  ) {
-    return "stopped";
-  }
-  if (
-    run.status === "failed" ||
-    exit?.error
-  ) {
-    return "error";
-  }
-  if (run.status === "partial") return "success";
-  if (exit?.code != null && exit.code !== 0) return "error";
-  return "success";
-}
-
 function currentState() {
   const botOutcome = completedBotOutcome(backend.bot);
   return {
@@ -202,7 +179,12 @@ hub.on("status", (status) => {
 
   if (status.reason === "exit" && wasRunning && status.lastExit) {
     try {
-      store.closeRunOnExit(status.lastExit);
+      // The Control API processes the log itself, so run.totals (set only by
+      // RUN-END) tells us the script finished even if this dashboard missed
+      // the line.
+      store.closeRunOnExit(status.lastExit, {
+        summarySeen: Boolean(status.run?.totals),
+      });
     } catch (e) {
       log("warn", `Could not record the run exit: ${e.message}`);
     }

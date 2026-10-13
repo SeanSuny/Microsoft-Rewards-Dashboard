@@ -76,6 +76,7 @@ function checkVariant(status) {
       stopped: "stopped",
       error: "error",
       running: "running",
+      skipped: "skipped",
       idle: "idle",
     }[status] ?? "idle"
   );
@@ -239,6 +240,7 @@ function renderAccountRows(root) {
         stopped: "stopped",
         error: "error",
         running: "running",
+        skipped: "skipped",
         idle: "idle",
       }[variant];
       if (badgeStatus !== "running" && nextAccountEmail && a.email === nextAccountEmail) {

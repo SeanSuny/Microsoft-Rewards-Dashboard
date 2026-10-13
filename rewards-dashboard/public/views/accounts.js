@@ -193,6 +193,16 @@ function partialReasonFeatures(reason) {
   }).filter(Boolean);
 }
 
+// last_error holds the list of incomplete features only for an account that
+// finished "partial" (or, for rows recorded before outcomes were stored, one
+// that succeeded with a reason). For failed/cancelled accounts it is a plain
+// error message and must not be split into pseudo-features.
+function partialReason(account) {
+  if (account.lastOutcome === "partial") return account.lastError;
+  if (account.lastOutcome == null && account.status === "success") return account.lastError;
+  return null;
+}
+
 function featureChips(account) {
   const activities = Array.isArray(account.activities) ? account.activities : [];
   const earned = new Map();
@@ -429,6 +439,7 @@ function renderAccountPanel(a, live) {
     full: "ph-check-circle",
     success: "ph-check-circle",
     partial: "ph-warning-circle",
+    skipped: "ph-skip-forward-circle",
     done: "ph-check-circle",
     error: "ph-x-circle",
     crashed: "ph-x-circle",
@@ -438,6 +449,7 @@ function renderAccountPanel(a, live) {
     starting: "ph-circle-notch",
     stopping: "ph-stop-circle",
     pending: "ph-clock",
+    stalled: "ph-pause-circle",
     idle: "ph-minus-circle",
   };
   const statusRail = `
@@ -448,7 +460,9 @@ function renderAccountPanel(a, live) {
     featureChips({
       ...(live || {}),
       lastError:
-        displayStatus !== a.status ? live?.error || null : a.lastError || live?.error,
+        displayStatus !== a.status
+          ? live?.error || null
+          : partialReason(a) || live?.error,
     }),
     earnableChips(live || {}),
   ].filter(Boolean).join("");
