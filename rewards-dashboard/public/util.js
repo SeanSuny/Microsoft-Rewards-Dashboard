@@ -312,8 +312,17 @@ const PILLS = {
   idle: ["pill-idle", "Idle"],
 };
 
-export function liveRunAccountMap(status) {
-  if (!status?.botRunning) return new Map();
+const STATUS_ALIASES = {
+  full: "success",
+  done: "success",
+  completed: "success",
+  partial: "success",
+  crashed: "error",
+  failed: "error",
+  cancelled: "stopped",
+};
+
+export function runAccountMap(status) {
   return new Map(
     (status.bot?.run?.accounts || [])
       .filter((account) => account?.email)
@@ -321,16 +330,18 @@ export function liveRunAccountMap(status) {
   );
 }
 
-export function accountDisplayStatus(account, liveAccount) {
+export function accountDisplayStatus(account, runAccount, runActive = false) {
   const watchdogStall =
     account.status === "error" &&
     account.lastError === "Run stalled before this account finished";
-  if (watchdogStall && liveAccount?.success == null) return "running";
+  if (watchdogStall && runActive && runAccount && runAccount.success == null)
+    return "running";
   return account.status;
 }
 
 export function pillParts(status) {
-  const [cls, label] = PILLS[status] || PILLS.idle;
+  const normalized = STATUS_ALIASES[status] || status;
+  const [cls, label] = PILLS[normalized] || PILLS.idle;
   return { cls, label };
 }
 

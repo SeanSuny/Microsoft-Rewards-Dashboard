@@ -371,7 +371,11 @@ function detailGroups(a, protection) {
 function renderAccountPanel(a, live) {
   const protection = protectionPresentation(a);
   const { usable, running } = controlState();
-  const displayStatus = U.accountDisplayStatus(a, live);
+  const displayStatus = U.accountDisplayStatus(
+    a,
+    live,
+    Boolean(context?.status?.botRunning),
+  );
 
   // Accounts now start one at a time (accountDelay), so mid-run there can be
   // several accounts that already finished this run while another is still
@@ -485,7 +489,7 @@ function render(root) {
   const container = U.$("#accountsContainer", root);
   const accounts = accountsPayload?.accounts || [];
 
-  const liveByEmail = U.liveRunAccountMap(context?.status);
+  const liveByEmail = U.runAccountMap(context?.status);
   const errEl = U.$("#accountsError", root);
   if (errEl) {
     errEl.hidden = !accountsPayload?.apiError;

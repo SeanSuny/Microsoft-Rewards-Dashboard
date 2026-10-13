@@ -306,6 +306,8 @@ function renderFooter() {
           ? "Disconnected"
           : outcome === "error"
             ? "Error"
+            : outcome === "stopped"
+              ? "Stopped"
             : outcome === "success"
               ? "Success"
               : s.botRunning

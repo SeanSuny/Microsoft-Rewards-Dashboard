@@ -71,7 +71,13 @@ function activeSchedule(status) {
 
 function checkVariant(status) {
   return (
-    { success: "ok", error: "error", running: "running", idle: "idle" }[status] ?? "idle"
+    {
+      success: "ok",
+      stopped: "stopped",
+      error: "error",
+      running: "running",
+      idle: "idle",
+    }[status] ?? "idle"
   );
 }
 
@@ -120,11 +126,12 @@ function renderStats(root, status) {
   const accounts = data?.accounts || [];
   const runs = data?.runs || [];
   const lastRun = runs.find((r) => r.status === "done") || runs[0] || null;
-  const liveByEmail = U.liveRunAccountMap(status);
+  const liveByEmail = U.runAccountMap(status);
   const accountStatus = (account) =>
     U.accountDisplayStatus(
       account,
       liveByEmail.get(account.email.trim().toLowerCase()),
+      Boolean(status?.botRunning),
     );
 
   const errorCount = accounts.filter((a) => accountStatus(a) === "error").length;
@@ -201,7 +208,7 @@ function renderAccountRows(root) {
   // started).
   const pendingDelay = context?.status?.pendingDelay;
   const nextAccountEmail = pendingDelay?.nextEmail || null;
-  const liveByEmail = U.liveRunAccountMap(context?.status);
+  const liveByEmail = U.runAccountMap(context?.status);
 
   // hide email for screenshots by toggling mask = true
   const MASK_EMAILS = false;
@@ -211,6 +218,7 @@ function renderAccountRows(root) {
       const displayStatus = U.accountDisplayStatus(
         a,
         liveByEmail.get(a.email.trim().toLowerCase()),
+        Boolean(context?.status?.botRunning),
       );
       const days = daysByKey[a.key] || null;
       let barCell = '<p class="empty-note" style="font-size:0.78rem;margin:0">No history yet</p>';
@@ -226,7 +234,13 @@ function renderAccountRows(root) {
 
       const todayGained = days?.find((d) => d.dayKey === todayKey)?.gained ?? null;
       const variant = checkVariant(displayStatus);
-      let badgeStatus = { ok: "success", error: "error", running: "running", idle: "idle" }[variant];
+      let badgeStatus = {
+        ok: "success",
+        stopped: "stopped",
+        error: "error",
+        running: "running",
+        idle: "idle",
+      }[variant];
       if (badgeStatus !== "running" && nextAccountEmail && a.email === nextAccountEmail) {
         badgeStatus = "pending";
       }
@@ -359,6 +373,7 @@ function renderRunHeader(root, status) {
   const bot = status?.bot;
   const run = bot?.run;
   const active = Boolean(status?.botRunning);
+  const outcome = active ? null : status?.botOutcome;
 
   const progressBox = U.$("#runProgressBox", root);
   const titleEl = U.$("#run-progress-heading", root);
@@ -396,6 +411,7 @@ function renderRunHeader(root, status) {
       total ? `${done}/${total} done` : `${seenCount} accounts seen`,
       total && runningCount ? `${runningCount} running` : null,
       total && pendingCount ? `${pendingCount} pending` : null,
+      outcome ? U.pillParts(outcome).label : null,
       run?.clusters != null ? `${run.clusters} cluster${run.clusters === 1 ? "" : "s"}` : null,
       run?.collected != null ? `${U.fmtSigned(run.collected)} points` : null,
       pendingDelayLabel(status?.pendingDelay),
