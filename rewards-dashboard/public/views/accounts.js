@@ -471,7 +471,7 @@ function renderAccountPanel(a, live) {
   ].filter(Boolean).join("");
   const featuresOpen = expandedFeatures.has(a.key);
   const featureDetails = `<details class="account-feature-details" data-feature-details="${U.escapeAttr(a.key)}" ${featuresOpen ? "open" : ""}>
-      <summary><span class="acc-detail-toggle account-feature-caret" aria-hidden="true">\u25b8</span><span>Activity Status</span></summary>
+      <summary><span class="acc-detail-toggle account-feature-caret" aria-hidden="true"><i class="ph ph-caret-right"></i></span><span>Activity Status</span></summary>
       <div class="account-feature-chips">${featureChipsHtml || '<span class="point-source">No feature results reported</span>'}</div>
     </details>`;
 
@@ -482,7 +482,7 @@ function renderAccountPanel(a, live) {
         <div class="account-card-main">
           <div class="panel-head">
             <h2>
-                <button type="button" class="acc-detail-toggle" data-toggle-details="${U.escapeAttr(a.key)}" aria-expanded="${isExpanded}" aria-controls="${detailsId}" title="${isExpanded ? "Collapse details" : "Expand details"}">\u25b8</button>
+                <button type="button" class="acc-detail-toggle" data-toggle-details="${U.escapeAttr(a.key)}" aria-expanded="${isExpanded}" aria-controls="${detailsId}" title="${isExpanded ? "Collapse details" : "Expand details"}"><i class="ph ph-caret-right" aria-hidden="true"></i></button>
               ${U.escapeHtml(a.email)}
             </h2>
             ${a.index != null ? `<span class="tag-mini acc-tag-account-id">ACCOUNT_${a.index}</span>` : ""}

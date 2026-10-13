@@ -307,6 +307,8 @@ function renderFooter() {
           ? "Disconnected"
           : outcome === "error"
             ? "Error"
+            : outcome === "interrupted"
+              ? "Interrupted"
             : outcome === "stopped"
               ? "Stopped"
             : outcome === "success"

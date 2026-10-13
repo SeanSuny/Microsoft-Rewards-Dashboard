@@ -25,7 +25,13 @@ const STOP_SIGNALS = new Set(["SIGINT", "SIGTERM", "SIGKILL", "SIGHUP"]);
 
 // The Control API's own run outcomes (CONTROLLER log line / /status
 // lastExit.status). Anything else is treated as "not reported" (v4).
-const RUN_OUTCOMES = new Set(["completed", "partial", "failed", "cancelled"]);
+const RUN_OUTCOMES = new Set([
+  "completed",
+  "partial",
+  "interrupted",
+  "failed",
+  "cancelled",
+]);
 
 // Account outcome (the script's status=) -> the dashboard's account status.
 // "partial" means the account ran to the end with some features incomplete,
@@ -381,6 +387,11 @@ class Store {
                     outcome = COALESCE(?, outcome)
                 WHERE id = ?
             `),
+        markRunInterrupted: this.db.prepare(`
+            UPDATE runs SET status = 'interrupted', exit_code = ?,
+              exit_signal = ?, outcome = 'interrupted'
+            WHERE id = ?
+          `),
       // Fills in what the process exit/controller reported for a run RUN-END
       // already closed. A NULL never erases a value we already have.
       setRunExit: this.db.prepare(`
@@ -1180,7 +1191,11 @@ class Store {
     if (recent?.status === "done") {
       const gapMs = Math.abs(Date.parse(exitAt) - Date.parse(recent.ts));
       if (Number.isFinite(gapMs) && gapMs <= AUTO_CLOSE_GRACE_MS) {
-        if (stopped) {
+        if (outcome === "interrupted") {
+          this.stmts.markRunInterrupted.run(code, signal, recent.id);
+          recent.status = "interrupted";
+          recent.ts = exitAt;
+        } else if (stopped) {
           // RUN-END reads status=partial even for a cancelled run, so the
           // exit is what turns "done" into "stopped".
           this.stmts.markRunStopped.run(code, stopSignal, outcome, recent.id);
@@ -1203,6 +1218,15 @@ class Store {
         outcome,
       });
       this._recentRunEnd = { id: running.id, ts: exitAt, status: "stopped" };
+      return true;
+    }
+
+    if (outcome === "interrupted") {
+      this._closeRunningRun(running, "interrupted", exitAt, {
+        code,
+        signal,
+        outcome,
+      });
       return true;
     }
 

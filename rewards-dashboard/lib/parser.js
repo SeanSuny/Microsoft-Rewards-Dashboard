@@ -100,7 +100,8 @@ const CLUSTER_WORKER_EXIT_RE =
 // final outcome of every run it launched - cron runs included, since
 // run_daily.sh triggers through the API - under title CONTROLLER:
 //   "Run completed (code 0)."            every account fully succeeded
-//   "Run partial (code 1)."              finished, but something was incomplete
+//   "Run partial (code 0)."              finished, but some features were incomplete
+//   "Run interrupted (code 1)."          did not finish
 //   "Run cancelled (code 143)."          stopped on request
 //   "Run failed (error: <message>)."     no accounts ran / spawn failure
 //   "Run cancelled (code 143 / signal SIGTERM)."
@@ -108,7 +109,7 @@ const CLUSTER_WORKER_EXIT_RE =
 // RUN-END's own status= (which reads "partial" even for a cancelled run) and
 // unlike the separate /status exit event, it needs no timing heuristics.
 const CONTROLLER_OUTCOME_RE =
-  /^Run (completed|partial|failed|cancelled) \((?:error: ([\s\S]*)|code (-?\d+|n\/a)(?: \/ signal (\S+))?)\)\.$/;
+  /^Run (completed|partial|interrupted|failed|cancelled) \((?:error: ([\s\S]*)|code (-?\d+|n\/a)(?: \/ signal (\S+))?)\)\.$/;
 
 /**
  * v5 logs the account's reason as a JSON string (reason="...", with embedded

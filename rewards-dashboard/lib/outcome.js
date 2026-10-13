@@ -6,15 +6,12 @@ const STOP_SIGNALS = ["SIGINT", "SIGTERM", "SIGKILL", "SIGHUP"];
 
 /**
  * The live verdict on a finished run, from the Control API's /status payload:
- * null while it hasn't finished, otherwise "success" | "stopped" | "error".
+ * null while it hasn't finished, otherwise "success" | "stopped" | "error" | "interrupted".
  * (Non-null is also how server.js knows a run is no longer active.)
  *
- * The Control API reports `partial` both for a run that finished with some
- * features incomplete AND for one whose process exited non-zero partway. They
- * are told apart by RUN-END: `run.totals` is set only once the script logged
- * its final summary. A partial run that reached it is a finished run (a
- * success - "partial" is about features). One that never did didn't complete.
- * This mirrors Store.closeRunOnExit, which records the same case as "crashed".
+ * v5 distinguishes a finished run with incomplete features (`partial`) from
+ * one that did not finish (`interrupted`). The totals check remains for older
+ * Control API versions, which used `partial` for both cases.
  */
 function completedBotOutcome(bot) {
   const run = bot?.run;
@@ -24,6 +21,7 @@ function completedBotOutcome(bot) {
   // An explicit failure outranks anything that merely looks like a stop.
   if (run.status === "failed") return "error";
   if (run.status === "stopped" || run.status === "cancelled") return "stopped";
+  if (run.status === "interrupted") return "interrupted";
   if (exit?.error) return "error";
   if (STOP_SIGNALS.includes(exit?.signal) || STOP_EXIT_CODES.includes(exit?.code)) {
     return "stopped";

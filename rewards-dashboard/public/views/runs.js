@@ -91,9 +91,9 @@ function renderRuns() {
 
 function exitPill(run) {
   const exit = run?.exit;
+  if (run?.status === "interrupted") return U.statusPill("interrupted");
   if (run?.status === "stopped" || run?.status === "cancelled" || exit?.signal || [130, 137, 143].includes(exit?.code))
     return U.statusPill("stopped");
-  if (run?.status === "interrupted") return U.statusPill("interrupted");
   if (["done", "success", "partial", "full", "completed"].includes(run?.status) || exit?.code === 0)
     return U.statusPill("success");
   if (["error", "failed", "crashed"].includes(run?.status) || exit?.error || exit?.code != null)
