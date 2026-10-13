@@ -371,22 +371,27 @@ function detailGroups(a, protection) {
 function renderAccountPanel(a, live) {
   const protection = protectionPresentation(a);
   const { usable, running } = controlState();
+  const displayStatus = U.accountDisplayStatus(
+    a,
+    live,
+    Boolean(context?.status?.botRunning),
+  );
 
   // Accounts now start one at a time (accountDelay), so mid-run there can be
   // several accounts that already finished this run while another is still
   // going - `live` just means "has a record in this run", true for both.
-  // a.status is this account's own last-observed outcome (idle/running/
-  // success/error), so it correctly tells finished accounts apart from the
-  // one actually in progress right now.
+  // The stored account status remains the outcome source. A pending account
+  // in the active Control API run can override only the watchdog's synthetic
+  // stalled error for display, so finished account outcomes stay intact.
   // Mirrors overview.js: while waiting between accounts, the one named by
   // pendingDelay.nextEmail is up next, so it reads as "pending" rather than
   // whatever its last-observed status happened to be.
   const nextAccountEmail = context?.status?.pendingDelay?.nextEmail || null;
   const statusKey = launching.has(a.index)
     ? "starting"
-    : a.status !== "running" && nextAccountEmail && a.email === nextAccountEmail
+    : displayStatus !== "running" && nextAccountEmail && a.email === nextAccountEmail
       ? "pending"
-      : a.status;
+      : displayStatus;
 
   const runButton =
     a.configured && Number.isInteger(a.index)
@@ -406,7 +411,7 @@ function renderAccountPanel(a, live) {
   const detailsId = `acc-details-${U.escapeAttr(a.key)}`;
 
   const isDeleting = deleting.has(a.key);
-  const deleteBlocked = a.status === "running" || launching.has(a.index);
+  const deleteBlocked = displayStatus === "running" || launching.has(a.index);
   const deleteButton = deleteArmed.has(a.key)
     ? `<span class="acc-delete-confirm">
         <button type="button" class="btn btn-icon btn-small" data-cancel-delete="${U.escapeAttr(a.key)}" aria-label="Cancel delete" ${isDeleting ? "disabled" : ""} title="Cancel delete"><i class="ph ph-x" aria-hidden="true"></i></button>
@@ -440,7 +445,11 @@ function renderAccountPanel(a, live) {
       <span class="account-rail-icon ${status.cls}" role="img" aria-label="${U.escapeAttr(status.label)}" title="${U.escapeAttr(status.label)}"><i class="ph ${statusIcons[statusKey] || statusIcons.idle}" aria-hidden="true"></i></span>
     </aside>`;
   const featureChipsHtml = [
-    featureChips({ ...(live || {}), lastError: a.lastError || live?.error }),
+    featureChips({
+      ...(live || {}),
+      lastError:
+        displayStatus !== a.status ? live?.error || null : a.lastError || live?.error,
+    }),
     earnableChips(live || {}),
   ].filter(Boolean).join("");
   const featuresOpen = expandedFeatures.has(a.key);
@@ -480,9 +489,7 @@ function render(root) {
   const container = U.$("#accountsContainer", root);
   const accounts = accountsPayload?.accounts || [];
 
-  const liveByEmail = new Map(
-    (context?.status?.bot?.run?.accounts || []).map((la) => [la.email, la]),
-  );
+  const liveByEmail = U.runAccountMap(context?.status);
   const errEl = U.$("#accountsError", root);
   if (errEl) {
     errEl.hidden = !accountsPayload?.apiError;
@@ -496,7 +503,7 @@ function render(root) {
   }
 
   container.innerHTML = accounts.map(a => {
-    const live = liveByEmail.get(a.email) || null;
+    const live = liveByEmail.get(a.email.trim().toLowerCase()) || null;
     return renderAccountPanel(a, live);
   }).join("");
 

@@ -130,6 +130,7 @@ class Store {
     this._prepare();
     this._lastTs = this._readMeta("lastTs");
     this._autoCloseTimer = null;
+    this._recentRunEnd = null;
     // Ephemeral (not persisted) - transient "waiting between accounts" state
     // is only meaningful while live, unlike everything else in this class.
     this._pendingDelay = null;
@@ -323,11 +324,20 @@ class Store {
                     exit_code = ?, exit_signal = ?
                 WHERE id = ?
             `),
+      markRunStopped: this.db.prepare(`
+                UPDATE runs SET status = 'stopped', exit_code = ?, exit_signal = ?
+                WHERE id = ?
+            `),
+      updateStoppedRunEnd: this.db.prepare(`
+                UPDATE runs SET end_ts = ?, accounts_processed = ?, total_gained = ?,
+                    old_total = ?, new_total = ?, runtime_min = ?
+                WHERE id = ? AND status = 'stopped'
+            `),
       orphanedRunningAccounts: this.db.prepare(
         "SELECT email FROM accounts WHERE status = 'running' AND last_start_at >= ?",
       ),
       markAccountInterrupted: this.db.prepare(`
-                UPDATE accounts SET status = 'error', last_end_at = ?, last_error = ?
+            UPDATE accounts SET status = ?, last_end_at = ?, last_error = ?
                 WHERE email = ? AND status = 'running'
             `),
       // RUN-END is authoritative proof that the overall run completed.
@@ -495,7 +505,19 @@ class Store {
     if (!running) return;
 
     const lastActivity = this.stmts.lastActivitySince.get(running.startTs);
-    const lastTs = (lastActivity && lastActivity.ts) || running.startTs;
+    // Informational log lines (including ongoing search progress) are parsed
+    // but intentionally omitted from the activity feed. _lastTs is persisted
+    // for every accepted event, so include it to avoid treating those active
+    // runs as silent hangs.
+    const recordedTs = (lastActivity && lastActivity.ts) || running.startTs;
+    const latestLogTs =
+      this._lastTs && Date.parse(this._lastTs) >= Date.parse(running.startTs)
+        ? this._lastTs
+        : running.startTs;
+    const lastTs =
+      Date.parse(latestLogTs) > Date.parse(recordedTs)
+        ? latestLogTs
+        : recordedTs;
     const ageMs = Date.now() - Date.parse(lastTs);
     if (!Number.isFinite(ageMs) || ageMs < RUN_NO_ACTIVITY_STALE_MS) return;
 
@@ -549,11 +571,13 @@ class Store {
         break;
       }
       case "account-end": {
-        const failedStatuses = new Set(["failed", "cancelled"]);
-        const accountStatus = failedStatuses.has(event.accountStatus)
-          ? "error"
-          : "success";
-        const error = accountStatus === "error" || event.accountStatus === "partial"
+        const accountStatus =
+          event.accountStatus === "failed"
+            ? "error"
+            : event.accountStatus === "cancelled"
+              ? "stopped"
+              : "success";
+        const error = accountStatus !== "success" || event.accountStatus === "partial"
           ? event.error || `Account finished with status=${event.accountStatus}`
           : null;
         this.stmts.upsertAccountEnd.run(
@@ -634,6 +658,7 @@ class Store {
         // before its roster ever filled (e.g. crashed after account 1 of
         // 3) - nothing will ever complete that roster, so fall back to a
         // generous time backstop just for that case.
+        this._recentRunEnd = null;
         this._resetCompletionEvidence();
 
         const alreadyRunning = this.stmts.findRunningRun.get();
@@ -787,12 +812,35 @@ class Store {
       }
       case "run-end": {
         this._pendingDelay = null;
+        const recentStop = this._recentRunEnd;
+        const stopGapMs = recentStop
+          ? Math.abs(Date.parse(event.ts) - Date.parse(recentStop.ts))
+          : Infinity;
+        if (
+          recentStop?.status === "stopped" &&
+          Number.isFinite(stopGapMs) &&
+          stopGapMs <= AUTO_CLOSE_GRACE_MS
+        ) {
+          this.stmts.updateStoppedRunEnd.run(
+            event.ts,
+            event.accountsProcessed,
+            event.totalGained,
+            event.oldTotal,
+            event.newTotal,
+            event.runtimeMin,
+            recentStop.id,
+          );
+          recentStop.ts = event.ts;
+          this._pendingDelay = null;
+          this._resetCompletionEvidence();
+          this._pushActivity(event);
+          break;
+        }
         const running = this.stmts.findRunningRun.get();
         if (running) {
-          // RUN-END only ever gets logged by the app itself, so we know the
-          // process didn't crash or get signaled - use closeRunFull (not
-          // closeRun) so exit_code/exit_signal stay consistent with the
-          // other closing paths.
+          // RUN-END means the script emitted its final account summary.
+          // Feature-level partial status still means the run completed; a
+          // separate process signal can amend the result to stopped.
           this.stmts.closeRunFull.run(
             "done",
             event.ts,
@@ -818,6 +866,7 @@ class Store {
               row.email,
             );
           }
+          this._recentRunEnd = { id: running.id, ts: event.ts, status: "done" };
         } else {
           this.stmts.insertOrphanRunEnd.run(
             event.ts,
@@ -828,6 +877,7 @@ class Store {
             event.newTotal,
             event.runtimeMin,
           );
+          this._recentRunEnd = { id: event.ts, ts: event.ts, status: "done" };
         }
         this._resetCompletionEvidence();
         this._pushActivity(event);
@@ -879,9 +929,8 @@ class Store {
   // Shared terminal-state closer for any 'running' row being ended without
   // the bot's own authoritative RUN-END line (auto-close/crash/stop/
   // interrupt) - derives accountsProcessed/gained/totals from
-  // account_history instead, and demotes any account this run left stuck at
-  // 'running' to 'error', since nothing else is coming for it once the run
-  // itself is closed.
+  // account_history instead, and finalizes accounts this run left marked
+  // 'running' according to whether the process stopped or failed.
   _closeRunningRun(running, status, endTs, { code = null, signal = null } = {}) {
     this._pendingDelay = null;
     const totals = this.stmts.sumHistorySince.get(running.startTs);
@@ -908,6 +957,7 @@ class Store {
 
     for (const row of this.stmts.orphanedRunningAccounts.all(running.startTs)) {
       this.stmts.markAccountInterrupted.run(
+        status === "stopped" ? "stopped" : "error",
         endTs,
         `Run ${status} before this account finished`,
         row.email,
@@ -934,10 +984,45 @@ class Store {
   }
 
   closeRunOnExit(exit) {
-    const running = this.stmts.findRunningRun.get();
-    if (!running) return false;
     const code = exit?.code ?? null;
     const signal = exit?.signal ?? null;
+    const stopped = Boolean(signal) || [130, 137, 143].includes(code);
+    const stopSignal = signal || ({ 130: "SIGINT", 137: "SIGKILL", 143: "SIGTERM" }[code] ?? null);
+    const exitAt = exit?.at || new Date().toISOString();
+
+    if (stopped && this._recentRunEnd?.status === "done") {
+      const gapMs = Math.abs(
+        Date.parse(exitAt) - Date.parse(this._recentRunEnd.ts),
+      );
+      if (Number.isFinite(gapMs) && gapMs <= AUTO_CLOSE_GRACE_MS) {
+        this.stmts.markRunStopped.run(code, stopSignal, this._recentRunEnd.id);
+        this._recentRunEnd.status = "stopped";
+        this._recentRunEnd.ts = exitAt;
+        return true;
+      }
+    }
+
+    const running = this.stmts.findRunningRun.get();
+    if (!running) return false;
+
+    if (stopped) {
+      this._closeRunningRun(running, "stopped", exitAt, {
+        code,
+        signal: stopSignal,
+      });
+      this._recentRunEnd = { id: running.id, ts: exitAt, status: "stopped" };
+      return true;
+    }
+
+    // A completed partial run exits with code 1, and its process-exit status
+    // can reach the dashboard just before the final RUN-END log event. If all
+    // declared accounts already have terminal log events, leave the row open
+    // for RUN-END (or the existing resolved-account auto-close) instead of
+    // misclassifying that normal partial completion as a crash.
+    if (running.totalAccounts != null) {
+      const resolved = this.stmts.accountsResolvedSince.get(running.startTs);
+      if (resolved.n >= running.totalAccounts) return false;
+    }
 
     // A clean exit (code 0, no signal) almost always means the app already
     // logged its own RUN-END line, which the "run-end" event handler above

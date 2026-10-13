@@ -312,8 +312,36 @@ const PILLS = {
   idle: ["pill-idle", "Idle"],
 };
 
+const STATUS_ALIASES = {
+  full: "success",
+  done: "success",
+  completed: "success",
+  partial: "success",
+  crashed: "error",
+  failed: "error",
+  cancelled: "stopped",
+};
+
+export function runAccountMap(status) {
+  return new Map(
+    (status.bot?.run?.accounts || [])
+      .filter((account) => account?.email)
+      .map((account) => [account.email.trim().toLowerCase(), account]),
+  );
+}
+
+export function accountDisplayStatus(account, runAccount, runActive = false) {
+  const watchdogStall =
+    account.status === "error" &&
+    account.lastError === "Run stalled before this account finished";
+  if (watchdogStall && runActive && runAccount && runAccount.success == null)
+    return "running";
+  return account.status;
+}
+
 export function pillParts(status) {
-  const [cls, label] = PILLS[status] || PILLS.idle;
+  const normalized = STATUS_ALIASES[status] || status;
+  const [cls, label] = PILLS[normalized] || PILLS.idle;
   return { cls, label };
 }
 

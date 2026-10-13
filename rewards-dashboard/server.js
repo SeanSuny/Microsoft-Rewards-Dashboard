@@ -120,14 +120,20 @@ function completedBotOutcome(bot) {
 
   const exit = bot.lastExit;
   if (
-    run.status === "failed" ||
+    run.status === "stopped" ||
     run.status === "cancelled" ||
-    exit?.error ||
-    exit?.signal
+    exit?.signal ||
+    [130, 137, 143].includes(exit?.code)
+  ) {
+    return "stopped";
+  }
+  if (
+    run.status === "failed" ||
+    exit?.error
   ) {
     return "error";
   }
-  if (run.status === "partial") return run.totals ? "success" : "error";
+  if (run.status === "partial") return "success";
   if (exit?.code != null && exit.code !== 0) return "error";
   return "success";
 }
@@ -279,6 +285,9 @@ async function pollOnce() {
   try {
     backend.bot = await client.get("/status");
   } catch (e) {
+    // Do not keep reporting a previous "running" snapshot when the status
+    // endpoint is unavailable (for example while the Control API restarts).
+    backend.bot = null;
     if (e.statusCode === 401) authFailed = true;
     backend.lastError =
       e.statusCode === 401 ? AUTH_HINT : `Status unavailable (${e.message})`;

@@ -89,12 +89,16 @@ function renderRuns() {
     .join("");
 }
 
-function exitPill(exit) {
-  if (!exit) return U.statusPill("idle");
-  if (exit.code === 0) return '<span class="pill pill-success">Exit 0</span>';
-  if (exit.signal)
-    return `<span class="pill pill-warn">${U.escapeHtml(exit.signal)}</span>`;
-  return `<span class="pill pill-error">Exit ${U.escapeHtml(String(exit.code ?? "n/a"))}</span>`;
+function exitPill(run) {
+  const exit = run?.exit;
+  if (run?.status === "stopped" || run?.status === "cancelled" || exit?.signal || [130, 137, 143].includes(exit?.code))
+    return U.statusPill("stopped");
+  if (run?.status === "interrupted") return U.statusPill("interrupted");
+  if (["done", "success", "partial", "full", "completed"].includes(run?.status) || exit?.code === 0)
+    return U.statusPill("success");
+  if (["error", "failed", "crashed"].includes(run?.status) || exit?.error || exit?.code != null)
+    return U.statusPill("error");
+  return U.statusPill("idle");
 }
 
 function renderExits() {
@@ -114,7 +118,14 @@ function renderExits() {
   list.innerHTML = exits
     .map((run, i) => {
       const failed = (run.accounts || []).filter(
-        (a) => a.success === false,
+        (account) =>
+          account.success === false &&
+          !/run cancelled|stopped/i.test(account.error || ""),
+      ).length;
+      const stopped = (run.accounts || []).filter(
+        (account) =>
+          account.success === false &&
+          /run cancelled|stopped/i.test(account.error || ""),
       ).length;
       const ok = (run.accounts || []).filter((a) => a.success === true).length;
       const isOpen = openExit === i;
@@ -122,7 +133,7 @@ function renderExits() {
         ? `<ul class="runacc-list">${(run.accounts || [])
           .map(
             (a) => `<li class="runacc">
-                            ${U.statusPill(a.success === false ? "error" : "success")}
+                            ${U.statusPill(a.success === true ? "success" : /run cancelled|stopped/i.test(a.error || "") ? "stopped" : "error")}
                             <span class="runacc-email">${U.escapeHtml(a.email)}</span>
                             <span class="runacc-detail">${U.escapeHtml(a.error ? a.error : `${U.fmtSigned(a.collected)} pts`)}</span>
                           </li>`,
@@ -132,9 +143,9 @@ function renderExits() {
 
       return `<li class="exit-item">
                 <button type="button" class="exit-head" data-exit="${i}" aria-expanded="${isOpen}">
-                    ${exitPill(run.exit)}
+                    ${exitPill(run)}
                     <span class="exit-when">${U.escapeHtml(U.fmtDateTime(run.endedAt || run.startedAt))}</span>
-                    <span class="exit-meta">${U.fmtSigned(run.collected || 0)} pts \u00b7 ${ok} ok${failed ? ` \u00b7 ${failed} failed` : ""}</span>
+                    <span class="exit-meta">${U.fmtSigned(run.collected || 0)} pts \u00b7 ${ok} ok${stopped ? ` \u00b7 ${stopped} stopped` : ""}${failed ? ` \u00b7 ${failed} failed` : ""}</span>
                     <span class="exit-chevron" aria-hidden="true">${isOpen ? "\u25BE" : "\u25B8"}</span>
                 </button>
                 ${detail}
