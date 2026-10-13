@@ -1271,7 +1271,7 @@ tbody tr:hover {
 .run-progress-box {
   margin: 0 0 0 0; 
   width: 100%;
-  padding: 1.1rem 1.25rem;
+  padding: 0.65rem 1.25rem;
   background: var(--surface); 
   border: 1px solid var(--border);
   border-radius: var(--radius); 
@@ -2133,16 +2133,23 @@ tbody tr:hover {
   padding: 0.65rem 1rem;
 }
 .cfg-reveal-copy {
+  display: flex;
+  align-items: baseline;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 0.1rem 0.8rem;
   min-width: 0;
 }
 .cfg-reveal-title {
+  flex: 0 0 auto;
   margin: 0;
   font-size: 0.95rem;
   font-weight: 700;
   color: var(--text);
 }
 .cfg-reveal-help {
-  margin: 0.15rem 0 0;
+  flex: 1 1 18rem;
+  margin: 0;
   color: var(--text-muted);
   font-size: 0.82rem;
 }
@@ -2737,6 +2744,9 @@ tbody tr:hover {
   .run-progress-meta {
     font-size: 0.78rem;
   }
+  .run-progress-box {
+    padding: 0.55rem 0.85rem;
+  }
 }
 
 /* Hero panel, stat cards, accumulation bars, run rows (mobile) */
@@ -2957,6 +2967,9 @@ tbody tr:hover {
 @media (max-width: 768px) {
   .cfg-reveal-banner {
     align-items: flex-start;
+  }
+  .cfg-reveal-copy {
+    gap: 0.1rem 0.5rem;
   }
   .cfg-reveal-toggle {
     margin-top: 0.1rem;
