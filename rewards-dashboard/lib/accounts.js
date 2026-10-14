@@ -73,8 +73,13 @@ function buildRow({ config, local, histories }) {
     lastGained: local ? local.lastGained : null,
     lastPoints: local ? local.lastPoints : null,
     lastDurationSec: local ? local.lastDurationSec : null,
+    lastOutcome: local ? (local.lastOutcome ?? null) : null,
+    // Once we've observed an account finish, our own record is the answer: a
+    // clean result must not fall back to an older error the API still holds.
     lastError:
-      (local && local.lastError) || (config && config.lastError) || null,
+      local && local.lastEndAt
+        ? local.lastError
+        : (local && local.lastError) || (config && config.lastError) || null,
     streakProtectionEnabled:
       local && local.streakProtectionEnabled != null
         ? Boolean(local.streakProtectionEnabled)

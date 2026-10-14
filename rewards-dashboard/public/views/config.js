@@ -5,8 +5,8 @@ const REDACTED = "***REDACTED***";
 
 let rootEl = null;
 let loaded = null; // the config exactly as the API returned it
-let meta = null; // { path, redacted }
 let drift = null; // { addedKeys, upToDate } from GET /api/config/diff, or null if unknown
+let scriptVersion = null;
 
 const isPlainObject = (v) =>
   v !== null && typeof v === "object" && !Array.isArray(v);
@@ -30,6 +30,16 @@ const TOGGLE_GROUPS = [
       headless: {
         label: "Headless browser",
         desc: "Run browser invisibly",
+      },
+      continueOnBotWarning: {
+        label: "Continue on bot warning",
+        desc: "Continue the run after a bot warning",
+        v5Only: true,
+      },
+      contintueOnBotWarning: {
+        label: "Continue on bot warning (legacy spelling)",
+        desc: "Continue the run after a bot warning",
+        v4Only: true,
       },
       errorDiagnostics: {
         label: "Error diagnostics",
@@ -134,6 +144,11 @@ const TOGGLE_GROUPS = [
         label: "Run on zero points",
         desc: "Run searches even when no search points remain",
       },
+      "searchSettings.useAccountLocale": {
+        label: "Use account locale",
+        desc: "Use each account's locale when building search queries",
+        v5Only: true,
+      },
       "searchSettings.parallelSearching": {
         label: "Parallel searching",
         desc: "Run searches in parallel",
@@ -150,10 +165,12 @@ const TOGGLE_GROUPS = [
       "experimental.apiSearch": {
         label: "API search",
         desc: "Perform Bing searches over HTTP instead of driving a browser page",
+        v4Only: true,
       },
       "experimental.apiSearchOnBing": {
         label: "API ExploreOnBing",
         desc: "Complete ExploreOnBing offers over HTTP instead of the browser",
+        v4Only: true,
       },
       "experimental.blockMedia": {
         label: "Block media",
@@ -162,6 +179,11 @@ const TOGGLE_GROUPS = [
       "experimental.edgeBrowsing": {
         label: "Edge browsing",
         desc: "Report the 30-minute Edge browsing activity as a background HTTP task",
+      },
+      "experimental.browserSearchApiReport": {
+        label: "Browser search API report",
+        desc: "Send one experimental API search per account after browser searches",
+        v5Only: true,
       },
     },
   },
@@ -226,6 +248,28 @@ const TOGGLE_GROUP_ORDER = [
   OTHER_GROUP_TITLE,
 ];
 
+function majorVersion() {
+  const match = /^v?(\d+)/i.exec(String(scriptVersion || ""));
+  return match ? Number(match[1]) : null;
+}
+
+function compatibilityLabel(def) {
+  if (def?.v5Only) return "v5 only";
+  if (def?.v4Only) return "v4 only";
+  return "";
+}
+
+function isVersionDisabled(def) {
+  const major = majorVersion();
+  if (major == null) return Boolean(def?.v5Only || def?.v4Only);
+  return Boolean((def?.v5Only && major < 5) || (def?.v4Only && major >= 5));
+}
+
+function compatibilityBadge(def) {
+  const label = compatibilityLabel(def);
+  return label ? `<span class="cfg-version-tag">${label}</span>` : "";
+}
+
 // Fallback for a boolean path with no entry above: "workers.doFooBar" ->
 // "Foo bar". Keeps an unrecognized-but-real setting visible and readable
 // rather than dropping it or showing the raw dotted path.
@@ -255,6 +299,16 @@ const FIELD_GROUPS = [
         label: "Session path",
         desc: "Directory to store browser sessions",
         placeholder: "sessions",
+      },
+      rewardsMode: {
+        kind: "select",
+        label: "Rewards mode",
+        desc: "Browser completes web tasks through rendered controls, checking /earn before remaining flyout activities. API signs in, saves desktop/mobile cookies and closes the browsers; remaining work, including Visual Search, uses HTTP.",
+        options: [
+          { value: "api", label: "API" },
+          { value: "browser", label: "Browser" },
+        ],
+        v5Only: true,
       },
       clusters: {
         kind: "number",
@@ -581,15 +635,28 @@ function fieldTooltip(path, desc) {
   return desc ? `${desc}\n${path}` : path;
 }
 
+function settingHelpHtml(path, label, desc, meta = null, className = "") {
+  const helpId = `cfg-help-${path.replace(/[^a-zA-Z0-9]/g, "-")}`;
+  const labelHtml = `${U.escapeHtml(label)}${compatibilityBadge(meta)}`;
+  if (!desc) return `<span class="cfg-help-label">${labelHtml}</span>`;
+  return `
+        <button type="button" class="cfg-help-toggle ${className}" data-toggle-help aria-expanded="false" aria-controls="${helpId}" title="Show setting description">
+            <span class="cfg-help-label">${labelHtml}</span>
+            <i class="ph ph-info" aria-hidden="true"></i>
+        </button>
+        <p class="cfg-help-description" id="${helpId}" hidden>${U.escapeHtml(desc)}</p>`;
+}
+
 function switchHtml(b) {
   const meta = TOGGLE_META[b.path];
   const label = meta?.label || fallbackLabel(b.path);
   const desc = meta?.desc || "";
+  const disabled = isVersionDisabled(meta);
   return `
-        <label class="switch" title="${U.escapeAttr(fieldTooltip(b.path, desc))}">
-            <input type="checkbox" data-path="${U.escapeAttr(b.path)}" ${b.value ? "checked" : ""}>
-            <span class="switch-label hint-text">${U.escapeHtml(label)}</span>
-        </label>`;
+        <div class="switch${disabled ? " switch-disabled" : ""}">
+            <input type="checkbox" data-path="${U.escapeAttr(b.path)}" aria-label="${U.escapeAttr(label)}" ${b.value ? "checked" : ""} ${disabled ? "disabled" : ""}>
+            ${settingHelpHtml(b.path, label, desc, meta, "switch-help")}
+        </div>`;
 }
 
 function renderSettings() {
@@ -599,6 +666,12 @@ function renderSettings() {
   // Group booleans in TOGGLE_GROUP_ORDER order; anything unrecognized falls
   // into a trailing "Other settings" group rather than being dropped.
   const bools = booleanPaths(loaded);
+  const discovered = new Set(bools.map((item) => item.path));
+  for (const [path, def] of Object.entries(TOGGLE_META)) {
+    if (def.v5Only && !discovered.has(path)) {
+      bools.push({ path, value: false });
+    }
+  }
   const togglesByGroup = new Map();
   for (const b of bools) {
     const groupTitle = TOGGLE_META[b.path]?.group || OTHER_GROUP_TITLE;
@@ -638,6 +711,15 @@ function renderSettings() {
 }
 
 function bindToggleEvents(host) {
+  host.querySelectorAll("button[data-toggle-help]").forEach((button) =>
+    button.addEventListener("click", () => {
+      const expanded = button.getAttribute("aria-expanded") === "true";
+      button.setAttribute("aria-expanded", String(!expanded));
+      button.nextElementSibling.hidden = expanded;
+      button.title = expanded ? "Show setting description" : "Hide setting description";
+    }),
+  );
+
   host.querySelectorAll('input[type="checkbox"][data-path]').forEach((input) =>
     input.addEventListener("change", async () => {
       const path = input.dataset.path;
@@ -662,27 +744,34 @@ function textFieldHtml(path, def) {
   const type = def.kind === "number" ? "number" : "text";
   const raw = getDeep(loaded, path);
   const locked = typeof raw === "string" && raw === REDACTED;
+  const disabled = locked || isVersionDisabled(def);
   const value = locked ? "" : (raw ?? "");
+  const inputId = `cfg-input-${path.replace(/[^a-zA-Z0-9]/g, "-")}`;
+  const placeholder = locked
+    ? "Hidden \u2014 use Reveal secrets above to edit"
+    : def.placeholder || "";
   return `
-        <label class="field field-item" title="${U.escapeAttr(fieldTooltip(path, def.desc))}">
-            <span class="hint-text">${U.escapeHtml(def.label)}</span>
-            <input class="input" type="${type}" data-path="${U.escapeAttr(path)}"
+        <div class="field field-item">
+            ${settingHelpHtml(path, def.label, def.desc, def)}
+            <input id="${inputId}" class="input" type="${type}" data-path="${U.escapeAttr(path)}" aria-label="${U.escapeAttr(def.label)}"
                 value="${U.escapeAttr(String(value))}"
-                placeholder="${U.escapeAttr(locked ? "Hidden \u2014 tick \u201cReveal secrets\u201d below to edit" : def.placeholder || "")}"
-                ${locked ? "disabled" : ""}
+                placeholder="${U.escapeAttr(placeholder)}"
+                ${disabled ? "disabled" : ""}
                 ${def.min != null ? `min="${def.min}"` : ""}
                 ${def.step != null ? `step="${def.step}"` : ""}>
             ${locked ? '<span class="field-locked">\uD83D\uDD12 Hidden until secrets are revealed</span>' : ""}
-        </label>`;
+        </div>`;
 }
 
 function selectFieldHtml(path, def) {
   const raw = getDeep(loaded, path);
   const current = raw == null ? "" : String(raw);
+  const disabled = isVersionDisabled(def);
+  const inputId = `cfg-input-${path.replace(/[^a-zA-Z0-9]/g, "-")}`;
   return `
-        <label class="field field-item" title="${U.escapeAttr(fieldTooltip(path, def.desc))}">
-            <span class="hint-text">${U.escapeHtml(def.label)}</span>
-            <select class="input" data-path="${U.escapeAttr(path)}" ${def.numeric ? 'data-numeric="1"' : ""}>
+        <div class="field field-item">
+            ${settingHelpHtml(path, def.label, def.desc, def)}
+            <select id="${inputId}" class="input" data-path="${U.escapeAttr(path)}" aria-label="${U.escapeAttr(def.label)}" ${disabled ? "disabled" : ""} ${def.numeric ? 'data-numeric="1"' : ""}>
                 ${def.options
       .map(
         (o) =>
@@ -690,7 +779,7 @@ function selectFieldHtml(path, def) {
       )
       .join("")}
             </select>
-        </label>`;
+          </div>`;
 }
 
 function tagsFieldHtml(path, def) {
@@ -698,8 +787,8 @@ function tagsFieldHtml(path, def) {
   const items = Array.isArray(raw) ? raw : [];
   const dlId = def.suggestions ? listId(path) : null;
   return `
-        <div class="field field-item field-tags" title="${U.escapeAttr(fieldTooltip(path, def.desc))}" data-tags-path="${U.escapeAttr(path)}">
-            <span class="hint-text">${U.escapeHtml(def.label)}</span>
+        <div class="field field-item field-tags" data-tags-path="${U.escapeAttr(path)}">
+            ${settingHelpHtml(path, def.label, def.desc, def)}
             <div class="tag-chips">
                 ${items
       .map(
@@ -713,7 +802,7 @@ function tagsFieldHtml(path, def) {
                 ${!items.length ? '<span class="empty-note tag-empty">None set</span>' : ""}
             </div>
             <div class="tag-add">
-                <input class="input tag-add-input" type="text" placeholder="${U.escapeAttr(def.placeholder || "Add value\u2026")}" ${dlId ? `list="${dlId}"` : ""}>
+                <input class="input tag-add-input" type="text" aria-label="Add ${U.escapeAttr(def.label)}" placeholder="${U.escapeAttr(def.placeholder || "Add value\u2026")}" ${dlId ? `list="${dlId}"` : ""}>
                 <button type="button" class="btn btn-small tag-add-btn">Add</button>
             </div>
             ${dlId ? `<datalist id="${dlId}">${def.suggestions.map((s) => `<option value="${U.escapeAttr(s)}">`).join("")}</datalist>` : ""}
@@ -723,12 +812,14 @@ function tagsFieldHtml(path, def) {
 
 function delaySubFieldHtml(groupLabel, subLabel, sub) {
   const value = getDeep(loaded, sub.path);
+  const inputId = `cfg-input-${sub.path.replace(/[^a-zA-Z0-9]/g, "-")}`;
+  const label = `${groupLabel} \u2014 ${subLabel}`;
   return `
-        <label class="field field-item" title="${U.escapeAttr(fieldTooltip(sub.path, sub.desc))}">
-            <span class="hint-text">${U.escapeHtml(groupLabel)} \u2014 ${subLabel}</span>
-            <input class="input" type="text" data-path="${U.escapeAttr(sub.path)}"
+        <div class="field field-item">
+            ${settingHelpHtml(sub.path, label, sub.desc)}
+            <input id="${inputId}" class="input" type="text" data-path="${U.escapeAttr(sub.path)}" aria-label="${U.escapeAttr(label)}"
                 value="${U.escapeAttr(value ?? "")}" placeholder="${U.escapeAttr(sub.placeholder || "")}">
-        </label>`;
+        </div>`;
 }
 
 function fieldHtml(path, def) {
@@ -979,14 +1070,12 @@ async function doSync() {
 async function loadConfig(reveal) {
   const res = await api.config(reveal);
   loaded = res.config;
-  meta = { path: res.path, redacted: res.redacted };
   paint();
   checkDrift(); // not awaited - drift banner fills in once it resolves, doesn't block the rest of the page
   return res;
 }
 
 function paint() {
-  U.$("#cfgRedacted", rootEl).hidden = !meta.redacted;
   U.$("#cfgEditor", rootEl).value = JSON.stringify(loaded, null, 2);
   renderSettings();
   showNotice("cfgNotice", "");
@@ -999,9 +1088,22 @@ export default {
 
   mount(root, ctx) {
     rootEl = root;
+    scriptVersion = ctx?.status?.version || null;
     root.innerHTML = `
             <p class="notice notice--warn" id="cfgNotice" hidden></p>
             <div id="cfgDrift" hidden></div>
+
+        <section class="panel cfg-reveal-banner" aria-labelledby="cfg-reveal-heading">
+          <div class="cfg-reveal-copy">
+            <h2 class="cfg-reveal-title" id="cfg-reveal-heading">Reveal secrets</h2>
+                    <p class="cfg-reveal-help">Enable viewing of sensitive secrets. Requires <code>API_ALLOW_CONFIG_REVEAL=true</code> on the control API.</p>
+          </div>
+          <label class="cfg-reveal-toggle" title="Fetch webhook URLs and tokens from the control API">
+            <input type="checkbox" id="cfgReveal" role="switch" aria-label="Reveal secrets">
+            <span class="cfg-reveal-track" aria-hidden="true"></span>
+            <span class="visually-hidden">Reveal secrets</span>
+          </label>
+        </section>
 
             <section class="panel" aria-labelledby="cfg-settings-heading">
                 <div class="panel-head">
@@ -1015,17 +1117,7 @@ export default {
                 <div class="panel-head">
                     <h2 id="cfg-raw-heading">Raw config</h2>
                     <span class="panel-sub">Only the fields you actually change are sent</span>
-                    <label class="check">
-                        <input type="checkbox" id="cfgReveal">
-                        <span>Reveal secrets</span>
-                    </label>
                 </div>
-
-                <p class="notice notice--info" id="cfgRedacted" hidden>
-                    Webhook URLs and tokens are shown as <code>${REDACTED}</code>. Saving never overwrites them &mdash;
-                    only the fields you edit are sent. To see and edit them, set <code>API_ALLOW_CONFIG_REVEAL=true</code>
-                    on the control API and tick &ldquo;Reveal secrets&rdquo;.
-                </p>
 
                 <textarea id="cfgEditor" class="editor" spellcheck="false" autocomplete="off" aria-label="config.json"></textarea>
 
@@ -1094,11 +1186,19 @@ export default {
   },
 
   async refresh(ctx) {
+    scriptVersion = ctx?.status?.version || scriptVersion;
     try {
       const reveal = U.$("#cfgReveal", rootEl)?.checked || false;
       await loadConfig(reveal);
     } catch (e) {
       showNotice("cfgNotice", U.escapeHtml(e.message), "error");
     }
+  },
+
+  onState(status) {
+    const nextVersion = status?.version || null;
+    if (nextVersion === scriptVersion) return;
+    scriptVersion = nextVersion;
+    if (loaded) renderSettings();
   },
 };

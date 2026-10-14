@@ -8,6 +8,42 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DB_FILE = path.join(DATA_DIR, "dashboard.sqlite");
 
 const MAX_ACTIVITY_ROWS = 5000;
+// Pruning in batches avoids a COUNT(*) + DELETE on every single insert.
+const ACTIVITY_PRUNE_SLACK = 250;
+
+// How often the persisted lastTs cursor is flushed for log lines that change
+// nothing (see apply()). Lines that do change state persist it immediately.
+const LAST_TS_FLUSH_MS = 30 * 1000;
+
+// Exit codes the Control API reports for a run stopped from outside
+// (SIGINT/SIGKILL/SIGTERM surfaced as 128+n).
+const STOP_SIGNAL_BY_CODE = { 130: "SIGINT", 137: "SIGKILL", 143: "SIGTERM" };
+
+// Signals that mean "someone stopped it". Anything else (SIGSEGV, SIGABRT...)
+// is the process crashing, not an intentional stop.
+const STOP_SIGNALS = new Set(["SIGINT", "SIGTERM", "SIGKILL", "SIGHUP"]);
+
+// The Control API's own run outcomes (CONTROLLER log line / /status
+// lastExit.status). Anything else is treated as "not reported" (v4).
+const RUN_OUTCOMES = new Set([
+  "completed",
+  "partial",
+  "interrupted",
+  "failed",
+  "cancelled",
+]);
+
+// Account outcome (the script's status=) -> the dashboard's account status.
+// "partial" means the account ran to the end with some features incomplete,
+// which is still a successful run for that account; the raw outcome is kept
+// in last_outcome so the distinction survives.
+const ACCOUNT_STATUS_BY_OUTCOME = {
+  completed: "success",
+  partial: "success",
+  skipped: "skipped",
+  cancelled: "stopped",
+  failed: "error",
+};
 
 // Last-resort cutoff for a 'running' row whose account roster never filled
 // (see the run-start case in apply() below) - e.g. the process died after
@@ -18,6 +54,9 @@ const MAX_ACTIVITY_ROWS = 5000;
 // longer still waiting on a manual login-approval prompt - so this only
 // exists to bound a truly abandoned run, not to police normal durations.
 const RUN_STALE_BACKSTOP_MS = 20 * 60 * 60 * 1000;
+
+// Extra time a pre-run sleep stays shown past its nominal end.
+const SLEEP_EXPIRY_SLACK_MS = 2 * 60 * 1000;
 
 // How long to wait after the last ACCOUNT-END/ACCOUNT-ERROR before assuming
 // the bot's own RUN-END is never coming and closing the run ourselves. The
@@ -70,6 +109,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     last_points INTEGER,
     last_duration_sec REAL,
     last_error TEXT,
+    last_outcome TEXT,
     streak_protection_enabled INTEGER,
     streak_protection_remaining_days INTEGER,
     streak_counter INTEGER,
@@ -100,7 +140,8 @@ CREATE TABLE IF NOT EXISTS runs (
     new_total INTEGER,
     runtime_min REAL,
     exit_code INTEGER,
-    exit_signal TEXT
+    exit_signal TEXT,
+    outcome TEXT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS idx_runs_start ON runs(start_ts);
 
@@ -120,20 +161,28 @@ CREATE INDEX IF NOT EXISTS idx_activity_ts ON activity(ts);
 `;
 
 class Store {
-  constructor() {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    this.db = new DatabaseSync(DB_FILE);
+  // dbFile may be ":memory:" (tests).
+  constructor({ dbFile = DB_FILE } = {}) {
+    if (dbFile !== ":memory:") fs.mkdirSync(path.dirname(dbFile), { recursive: true });
+    this.db = new DatabaseSync(dbFile);
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA synchronous = NORMAL;");
     this.db.exec(SCHEMA);
     this._migrate();
     this._prepare();
     this._lastTs = this._readMeta("lastTs");
-    this._autoCloseTimer = null;
+    this._lastTsDirty = false;
+    this._activityCount = this.stmts.countActivity.get().n;
+    // A run that goes quiet is only a hang if the silence happened while we
+    // were watching; time before this process booted doesn't count.
+    this._bootMs = Date.now();
+    this._settleTimer = null;
     this._recentRunEnd = null;
     // Ephemeral (not persisted) - transient "waiting between accounts" state
     // is only meaningful while live, unlike everything else in this class.
     this._pendingDelay = null;
+    this._pendingSleep = null;
+    this._wrapperSkipped = false;
 
     // Completion evidence for the currently running process. Deliberately
     // NOT persisted - describes evidence from the live log stream only. If
@@ -147,6 +196,11 @@ class Store {
     // independently of incoming events, since a truly dead run produces no
     // further events to trigger a check.
     this._zeroStartWatchdog = setInterval(() => {
+      try {
+        this._flushLastTs();
+      } catch {
+        /* best-effort */
+      }
       try {
         this._tryCloseZeroStartRun();
       } catch {
@@ -172,6 +226,8 @@ class Store {
       this.db.exec("ALTER TABLE runs ADD COLUMN exit_code INTEGER");
     if (!runCols.has("exit_signal"))
       this.db.exec("ALTER TABLE runs ADD COLUMN exit_signal TEXT");
+    if (!runCols.has("outcome"))
+      this.db.exec("ALTER TABLE runs ADD COLUMN outcome TEXT");
 
     const accountCols = new Set(
       this.db
@@ -180,6 +236,7 @@ class Store {
         .map((c) => c.name),
     );
     const accountMigrations = [
+      ["last_outcome", "TEXT"],
       ["streak_protection_enabled", "INTEGER"],
       ["streak_protection_remaining_days", "INTEGER"],
       ["streak_counter", "INTEGER"],
@@ -205,26 +262,33 @@ class Store {
                     user_name = excluded.user_name,
                     geo_locale = excluded.geo_locale,
                     status = 'running',
+                    last_outcome = NULL,
                     last_start_at = excluded.last_start_at
             `),
+      // last_points keeps its previous value when the new one is NULL: a
+      // failed/cancelled account reports a placeholder balance (the cluster
+      // master logs 0/0 for a worker that died), and a placeholder must not
+      // overwrite the last balance we actually saw.
       upsertAccountEnd: this.db.prepare(`
-                INSERT INTO accounts (email, user_name, status, last_end_at, last_gained, last_points, last_duration_sec, last_error)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO accounts (email, user_name, status, last_end_at, last_gained, last_points, last_duration_sec, last_error, last_outcome)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(email) DO UPDATE SET
-              status = excluded.status,
+                    status = excluded.status,
                     last_end_at = excluded.last_end_at,
                     last_gained = excluded.last_gained,
-                    last_points = excluded.last_points,
+                    last_points = COALESCE(excluded.last_points, last_points),
                     last_duration_sec = excluded.last_duration_sec,
-                  last_error = excluded.last_error
+                    last_error = excluded.last_error,
+                    last_outcome = excluded.last_outcome
             `),
       upsertAccountError: this.db.prepare(`
-                INSERT INTO accounts (email, status, last_end_at, last_error)
-                VALUES (?, 'error', ?, ?)
+                INSERT INTO accounts (email, status, last_end_at, last_error, last_outcome)
+                VALUES (?, 'error', ?, ?, 'failed')
                 ON CONFLICT(email) DO UPDATE SET
                     status = 'error',
                     last_end_at = excluded.last_end_at,
-                    last_error = excluded.last_error
+                    last_error = excluded.last_error,
+                    last_outcome = 'failed'
             `),
       upsertStreakProtection: this.db.prepare(`
                 INSERT INTO accounts (
@@ -258,6 +322,7 @@ class Store {
                        last_start_at as lastStartAt, last_end_at as lastEndAt,
                        last_gained as lastGained, last_points as lastPoints,
                        last_duration_sec as lastDurationSec, last_error as lastError,
+                       last_outcome as lastOutcome,
                        streak_protection_enabled as streakProtectionEnabled,
                        streak_protection_remaining_days as streakProtectionRemainingDays,
                        streak_counter as streakCounter,
@@ -277,15 +342,12 @@ class Store {
       accountsStartedSince: this.db.prepare(`
                 SELECT COUNT(DISTINCT email) as n
                 FROM activity
-                WHERE title = 'ACCOUNT-START' AND email IS NOT NULL AND ts >= ?
+                WHERE kind = 'account-start' AND email IS NOT NULL AND ts >= ?
             `),
       accountsResolvedSince: this.db.prepare(`
                 SELECT COUNT(DISTINCT email) as n, MAX(ts) as lastTs
                 FROM activity
-                WHERE title IN ('ACCOUNT-END', 'ACCOUNT-ERROR') AND email IS NOT NULL AND ts >= ?
-            `),
-      lastActivitySince: this.db.prepare(`
-                SELECT MAX(ts) as ts FROM activity WHERE ts >= ?
+                WHERE kind IN ('account-end', 'account-error') AND email IS NOT NULL AND ts >= ?
             `),
       lastLoginPromptKindSince: this.db.prepare(`
                 SELECT kind FROM activity
@@ -297,35 +359,45 @@ class Store {
                 FROM account_history WHERE ts >= ?
             `),
 
-      closeRun: this.db.prepare(`
-                UPDATE runs SET status = 'done', end_ts = ?, accounts_processed = ?,
-                    total_gained = ?, old_total = ?, new_total = ?, runtime_min = ?
-                WHERE id = ?
-            `),
       insertOrphanRunEnd: this.db.prepare(`
-                INSERT INTO runs (id, status, end_ts, accounts_processed, total_gained, old_total, new_total, runtime_min)
-                VALUES (?, 'done', ?, ?, ?, ?, ?, ?)
+                INSERT INTO runs (id, status, end_ts, accounts_processed, total_gained, old_total, new_total, runtime_min, outcome)
+                VALUES (?, 'done', ?, ?, ?, ?, ?, ?, ?)
             `),
       recentRuns: this.db.prepare(`
                 SELECT id, status, start_ts as startTs, end_ts as endTs, version,
                        total_accounts as totalAccounts, clusters,
                        accounts_processed as accountsProcessed, total_gained as totalGained,
                        old_total as oldTotal, new_total as newTotal, runtime_min as runtimeMin,
-                       exit_code as exitCode, exit_signal as exitSignal
+                       exit_code as exitCode, exit_signal as exitSignal, outcome
                 FROM runs ORDER BY COALESCE(start_ts, end_ts) DESC LIMIT ?
             `),
-      // Unified terminal-state closer used whenever we're ending a run
-      // without the bot's own authoritative RUN-END data (crash/stop/
-      // interrupt/auto-close) - stats are derived from account_history
-      // instead, see _closeRunningRun().
+      // The single terminal-state writer for a 'running' row. RUN-END passes
+      // the bot's own totals; every other path (crash/stop/interrupt/
+      // auto-close) derives them from account_history, see _closeRunningRun().
+      // exit_code/exit_signal are NULL when the exit wasn't observed - never
+      // a guessed 0.
       closeRunFull: this.db.prepare(`
                 UPDATE runs SET status = ?, end_ts = ?, accounts_processed = ?,
                     total_gained = ?, old_total = ?, new_total = ?, runtime_min = ?,
-                    exit_code = ?, exit_signal = ?
+                    exit_code = ?, exit_signal = ?, outcome = ?
                 WHERE id = ?
             `),
       markRunStopped: this.db.prepare(`
-                UPDATE runs SET status = 'stopped', exit_code = ?, exit_signal = ?
+                UPDATE runs SET status = 'stopped', exit_code = ?, exit_signal = ?,
+                    outcome = COALESCE(?, outcome)
+                WHERE id = ?
+            `),
+        markRunInterrupted: this.db.prepare(`
+            UPDATE runs SET status = 'interrupted', exit_code = ?,
+              exit_signal = ?, outcome = 'interrupted'
+            WHERE id = ?
+          `),
+      // Fills in what the process exit/controller reported for a run RUN-END
+      // already closed. A NULL never erases a value we already have.
+      setRunExit: this.db.prepare(`
+                UPDATE runs SET outcome = COALESCE(?, outcome),
+                    exit_code = COALESCE(?, exit_code),
+                    exit_signal = COALESCE(?, exit_signal)
                 WHERE id = ?
             `),
       updateStoppedRunEnd: this.db.prepare(`
@@ -337,7 +409,7 @@ class Store {
         "SELECT email FROM accounts WHERE status = 'running' AND last_start_at >= ?",
       ),
       markAccountInterrupted: this.db.prepare(`
-            UPDATE accounts SET status = ?, last_end_at = ?, last_error = ?
+            UPDATE accounts SET status = ?, last_end_at = ?, last_error = ?, last_outcome = ?
                 WHERE email = ? AND status = 'running'
             `),
       // RUN-END is authoritative proof that the overall run completed.
@@ -346,7 +418,7 @@ class Store {
       // Keep the diagnostic in last_error so the missing worker result is
       // visible without incorrectly classifying the completed run as an error.
       markAccountCompletedWithoutResult: this.db.prepare(`
-                UPDATE accounts SET status = 'success', last_end_at = ?, last_error = ?
+                UPDATE accounts SET status = 'success', last_end_at = ?, last_error = ?, last_outcome = NULL
                 WHERE email = ? AND status = 'running'
             `),
       allHistories: this.db.prepare(`
@@ -397,6 +469,20 @@ class Store {
     return this._pendingDelay;
   }
 
+  // The wrapper's optional randomized pre-run sleep. Dropped once it has
+  // elapsed (with slack for log lag) so a missed "Starting script..." line
+  // can't leave it showing forever.
+  get pendingSleep() {
+    const s = this._pendingSleep;
+    if (!s) return null;
+    const endMs = Date.parse(s.sinceTs) + s.seconds * 1000;
+    if (Number.isFinite(endMs) && Date.now() > endMs + SLEEP_EXPIRY_SLACK_MS) {
+      this._pendingSleep = null;
+      return null;
+    }
+    return s;
+  }
+
   _resetCompletionEvidence() {
     this._workersExitedCleanly = false;
     this._workersExitedAt = null;
@@ -405,6 +491,14 @@ class Store {
     this._successfulWrapperCompletion = false;
     this._successfulWrapperCompletionAt = null;
     this._wrapperFailureSeen = false;
+
+    // run_daily.sh released its lock while the run was still open - see the
+    // wrapper-lock-released case in apply() for why that is only recorded.
+    this._lockReleasedAt = null;
+
+    // The Control API reported (on the exit event) that it saw RUN-END.
+    this._apiSawSummary = false;
+    this._pendingExit = null;
   }
 
   // Successful completion requires BOTH:
@@ -429,43 +523,9 @@ class Store {
       eventTs ||
       new Date().toISOString();
 
-    const totals = this.stmts.sumHistorySince.get(running.startTs);
-    const resolved = this.stmts.accountsResolvedSince.get(running.startTs);
-    const gained = totals.gained || 0;
-    const newTotal = totals.points || 0;
-    const oldTotal = newTotal - gained;
-    const runtimeMin = Number(
-      ((Date.parse(endTs) - Date.parse(running.startTs)) / 60000).toFixed(1),
-    );
-
-    this.stmts.closeRunFull.run(
-      "done",
-      endTs,
-      resolved.n || 0,
-      gained,
-      oldTotal,
-      newTotal,
-      runtimeMin,
-      0,
-      null,
-      running.id,
-    );
-
-    // The overall process completed successfully, so any account still
-    // marked 'running' failed to emit its own terminal event. Mark it
-    // success (not error) since the run itself succeeded - keep the
-    // diagnostic in last_error so the missing per-account result stays
-    // visible.
-    for (const row of this.stmts.orphanedRunningAccounts.all(running.startTs)) {
-      this.stmts.markAccountCompletedWithoutResult.run(
-        endTs,
-        "Run completed successfully, but this account's own result was never logged (its worker likely failed silently).",
-        row.email,
-      );
-    }
-
-    this._pendingDelay = null;
-    this._resetCompletionEvidence();
+    // Clean worker exits + a successful wrapper are real evidence of exit
+    // code 0, unlike the other derived closes where the exit is unknown.
+    this._closeRunningRun(running, "done", endTs, { code: 0 });
     return true;
   }
 
@@ -504,21 +564,16 @@ class Store {
     const running = this.stmts.findRunningRun.get();
     if (!running) return;
 
-    const lastActivity = this.stmts.lastActivitySince.get(running.startTs);
-    // Informational log lines (including ongoing search progress) are parsed
-    // but intentionally omitted from the activity feed. _lastTs is persisted
-    // for every accepted event, so include it to avoid treating those active
-    // runs as silent hangs.
-    const recordedTs = (lastActivity && lastActivity.ts) || running.startTs;
-    const latestLogTs =
-      this._lastTs && Date.parse(this._lastTs) >= Date.parse(running.startTs)
-        ? this._lastTs
-        : running.startTs;
-    const lastTs =
-      Date.parse(latestLogTs) > Date.parse(recordedTs)
-        ? latestLogTs
-        : recordedTs;
-    const ageMs = Date.now() - Date.parse(lastTs);
+    // _lastTs is the newest line of ANY kind we accepted (including
+    // informational search progress that never reaches the activity table),
+    // so it alone says when the run last did something. Silence from before
+    // this process booted doesn't count against the run.
+    const lastTs = Math.max(
+      this._lastTs ? Date.parse(this._lastTs) : 0,
+      Date.parse(running.startTs),
+      this._bootMs,
+    );
+    const ageMs = Date.now() - lastTs;
     if (!Number.isFinite(ageMs) || ageMs < RUN_NO_ACTIVITY_STALE_MS) return;
 
     const pendingApproval = this.stmts.lastLoginPromptKindSince.get(running.startTs);
@@ -539,10 +594,22 @@ class Store {
       event.message || null,
       event.raw || null,
     );
-    const { n } = this.stmts.countActivity.get();
-    if (n > MAX_ACTIVITY_ROWS) {
-      this.stmts.pruneActivity.run(n - MAX_ACTIVITY_ROWS);
+    this._activityCount += 1;
+    if (this._activityCount > MAX_ACTIVITY_ROWS + ACTIVITY_PRUNE_SLACK) {
+      this.stmts.pruneActivity.run(this._activityCount - MAX_ACTIVITY_ROWS);
+      this._activityCount = MAX_ACTIVITY_ROWS;
     }
+  }
+
+  // The lastTs cursor is what makes SSE replay idempotent after a restart.
+  // Any line that changes state persists it immediately; the ~95% of lines
+  // that change nothing only mark it dirty, and the watchdog tick (or
+  // close()) flushes it. Losing a few of those on a crash is harmless: they
+  // are re-fed on replay and ignored again.
+  _flushLastTs() {
+    if (!this._lastTsDirty) return;
+    this._writeMeta("lastTs", this._lastTs);
+    this._lastTsDirty = false;
   }
 
   apply(event) {
@@ -552,7 +619,6 @@ class Store {
       return false;
     }
     this._lastTs = event.ts;
-    this._writeMeta("lastTs", event.ts);
 
     let changed = true;
 
@@ -571,24 +637,32 @@ class Store {
         break;
       }
       case "account-end": {
-        const accountStatus =
-          event.accountStatus === "failed"
-            ? "error"
-            : event.accountStatus === "cancelled"
-              ? "stopped"
-              : "success";
-        const error = accountStatus !== "success" || event.accountStatus === "partial"
-          ? event.error || `Account finished with status=${event.accountStatus}`
-          : null;
+        const outcome = event.accountStatus;
+        const known = Object.hasOwn(ACCOUNT_STATUS_BY_OUTCOME, outcome);
+        const accountStatus = known ? ACCOUNT_STATUS_BY_OUTCOME[outcome] : "success";
+        // last_error carries the reason for anything that isn't a clean
+        // completion. For a partial account that is the list of incomplete
+        // features (not an error - status stays "success"); for failed/
+        // cancelled it is the failure itself.
+        const error =
+          outcome === "completed"
+            ? null
+            : event.error ||
+              (known ? null : `Account finished with unrecognised status=${outcome}`);
+        // A failed account can report placeholder numbers (a dead cluster
+        // worker logs balance 0 and duration 0). Treat those as unknown
+        // rather than as real values.
+        const placeholder = event.gained == null && event.newPoints === 0;
         this.stmts.upsertAccountEnd.run(
           event.email,
-          event.userName || null,
+          event.accountName || null,
           accountStatus,
           event.ts,
           event.gained,
-          event.newPoints,
-          event.durationSec,
+          placeholder ? null : event.newPoints,
+          placeholder && event.durationSec === 0 ? null : event.durationSec,
           error,
+          outcome,
         );
         if (event.gained != null) {
           this.stmts.insertHistory.run(
@@ -600,7 +674,7 @@ class Store {
           );
         }
         this._pushActivity(event);
-        this._scheduleAutoCloseCheck();
+        this._scheduleSettleCheck();
         break;
       }
       case "account-error": {
@@ -608,7 +682,7 @@ class Store {
           this.stmts.upsertAccountError.run(event.email, event.ts, event.error);
         }
         this._pushActivity(event);
-        this._scheduleAutoCloseCheck();
+        this._scheduleSettleCheck();
         break;
       }
       case "account-delay": {
@@ -624,7 +698,7 @@ class Store {
         this.stmts.upsertStreakProtection.run(
           event.email,
           event.userName || null,
-          event.enabled ? 1 : 0,
+          event.enabled == null ? null : event.enabled ? 1 : 0,
           event.remainingDays,
           event.streakCounter,
           event.ts,
@@ -659,6 +733,7 @@ class Store {
         // 3) - nothing will ever complete that roster, so fall back to a
         // generous time backstop just for that case.
         this._recentRunEnd = null;
+        this._pendingSleep = null;
         this._resetCompletionEvidence();
 
         const alreadyRunning = this.stmts.findRunningRun.get();
@@ -739,6 +814,11 @@ class Store {
         break;
       }
       case "wrapper-script-completed": {
+        if (this._wrapperSkipped) {
+          // The skipped wrapper reports success without having run anything.
+          this._pushActivity(event);
+          break;
+        }
         // "Script completed successfully (via API)." is an explicit,
         // unambiguous positive completion signal.
         this._successfulWrapperCompletion = true;
@@ -753,7 +833,7 @@ class Store {
         // including right after "ERROR: Script failed!". Only count it as
         // completion evidence if no failure has been seen yet this run, so
         // it can't silently resurrect a run we already know failed.
-        if (!this._wrapperFailureSeen) {
+        if (!this._wrapperFailureSeen && !this._wrapperSkipped) {
           this._successfulWrapperCompletion = true;
           this._successfulWrapperCompletionAt = event.ts;
           this._tryCloseFromSuccessfulProcessCompletion(event.ts);
@@ -772,33 +852,54 @@ class Store {
         break;
       }
       case "wrapper-lock-acquired": {
+        this._wrapperSkipped = false;
         this._pushActivity({
           ...event,
           message: `Cron run starting (lock acquired, PID ${event.pid})`,
         });
         break;
       }
+      case "wrapper-run-skipped": {
+        this._wrapperSkipped = true;
+        this._pendingSleep = null;
+        this._pushActivity(event);
+        break;
+      }
+      case "wrapper-sleep": {
+        this._pendingSleep = { seconds: event.seconds, sinceTs: event.ts };
+        this._pushActivity({
+          ...event,
+          message: `Run delayed: sleeping ${event.seconds}s before starting`,
+        });
+        break;
+      }
+      case "wrapper-starting": {
+        this._pendingSleep = null;
+        break;
+      }
       case "wrapper-lock-released": {
+        this._pendingSleep = null;
         // Fires via run_daily.sh's bash EXIT trap, including after a
         // crash/kill - so by itself it's never proof of success. If worker +
         // wrapper evidence already proves a clean completion, this may be
-        // the event that finally closes the run (e.g. if it arrived before
-        // RUN-END for some reason). Otherwise, if a run is still marked
-        // 'running' by the time this shows up, that's proof nothing else is
-        // coming for it and it's genuinely abnormal - close it out rather
-        // than leaving a permanent ghost. This only covers wrapper-invoked
-        // runs (cron/RUN_ON_START); a run started directly via the
-        // dashboard/API still relies on closeRunOnExit for that case.
+        // the event that finally closes the run.
+        //
+        // It must NOT close an unfinished run on the spot, though: when the
+        // container is stopped, the wrapper's trap logs this about a second
+        // BEFORE the bot's own shutdown lines (account results, RUN-END, the
+        // controller's "Run cancelled"). Closing here split one run into an
+        // "interrupted" row plus an orphan row from the RUN-END that followed.
+        // So only remember it and re-check after a grace period: if the run is
+        // still open by then, nothing else is coming for it.
         const closedSuccessfully = this._tryCloseFromSuccessfulProcessCompletion(
           event.ts,
         );
 
-        if (!closedSuccessfully) {
-          const stillRunning = this.stmts.findRunningRun.get();
-          if (stillRunning) {
-            this._closeRunningRun(stillRunning, "interrupted", event.ts);
-          }
+        if (!closedSuccessfully && this.stmts.findRunningRun.get() && !this._wrapperSkipped) {
+          this._lockReleasedAt = event.ts;
+          this._scheduleSettleCheck();
         }
+        this._wrapperSkipped = false;
 
         if (event.pid) {
           this._pushActivity({
@@ -839,8 +940,11 @@ class Store {
         const running = this.stmts.findRunningRun.get();
         if (running) {
           // RUN-END means the script emitted its final account summary.
-          // Feature-level partial status still means the run completed; a
-          // separate process signal can amend the result to stopped.
+          // Feature-level partial status still means the run completed, so
+          // the row is "done" and the script's own word (status=partial) is
+          // kept as its outcome. The process exit isn't known yet - a later
+          // exit/controller event fills it in (see closeRunOnExit) - so
+          // exit_code stays NULL here instead of a guessed 0.
           this.stmts.closeRunFull.run(
             "done",
             event.ts,
@@ -849,23 +953,14 @@ class Store {
             event.oldTotal,
             event.newTotal,
             event.runtimeMin,
-            0,
             null,
+            null,
+            event.terminalStatus,
             running.id,
           );
           // RUN-END firing is proof the run is genuinely over - any account
-          // still marked 'running' from it never got its own ACCOUNT-END or
-          // ACCOUNT-ERROR (worker died silently), and would otherwise stay
-          // stuck 'running' forever. Since this is a successfully completed
-          // overall run, finalize those accounts as success while retaining
-          // the diagnostic that their individual result was missing.
-          for (const row of this.stmts.orphanedRunningAccounts.all(running.startTs)) {
-            this.stmts.markAccountCompletedWithoutResult.run(
-              event.ts,
-              "Run completed, but this account's own result was never logged (its worker likely failed silently).",
-              row.email,
-            );
-          }
+          // still marked 'running' from it never got its own result line.
+          this._finalizeOrphanAccounts(running.startTs, "done", event.ts);
           this._recentRunEnd = { id: running.id, ts: event.ts, status: "done" };
         } else {
           this.stmts.insertOrphanRunEnd.run(
@@ -876,10 +971,27 @@ class Store {
             event.oldTotal,
             event.newTotal,
             event.runtimeMin,
+            event.terminalStatus,
           );
           this._recentRunEnd = { id: event.ts, ts: event.ts, status: "done" };
         }
         this._resetCompletionEvidence();
+        this._pushActivity(event);
+        break;
+      }
+      case "controller-outcome": {
+        // The Control API's verdict on the run it launched. Same handling as
+        // a /status exit event, except that being part of the ordered log
+        // stream (right after RUN-END) it is final - see closeRunOnExit.
+        this.closeRunOnExit(
+          {
+            status: event.outcome,
+            code: event.code,
+            signal: event.signal,
+            at: event.ts,
+          },
+          { fromLog: true },
+        );
         this._pushActivity(event);
         break;
       }
@@ -903,35 +1015,119 @@ class Store {
         changed = false;
     }
 
+    if (changed) {
+      this._writeMeta("lastTs", this._lastTs);
+      this._lastTsDirty = false;
+    } else {
+      this._lastTsDirty = true;
+    }
     return changed;
   }
 
-  // Defers the stale-running-run check rather than running it inline: the
-  // bot's own RUN-END normally follows within ~1s of the last account, so
-  // firing immediately would race it and risk closing the run ourselves
-  // right before the real RUN-END arrives, which would then find no
-  // 'running' row and create a duplicate orphan instead of just updating
-  // this one. Rescheduling on every account-end/error also means the timer
-  // only ever fires AUTO_CLOSE_GRACE_MS after the LAST one in a batch.
-  _scheduleAutoCloseCheck() {
-    if (this._autoCloseTimer) clearTimeout(this._autoCloseTimer);
-    this._autoCloseTimer = setTimeout(() => {
-      this._autoCloseTimer = null;
+  // Defers "should this still-open run be closed?" rather than answering it
+  // inline: the bot's RUN-END (and the controller's outcome line) normally
+  // follow within ~1s of the last account result / the wrapper's lock
+  // release, so deciding immediately would race them - closing the row
+  // ourselves right before the real RUN-END arrives, which would then find no
+  // 'running' row and create a duplicate orphan. Every account result and
+  // lock release reschedules the timer, so it only fires AUTO_CLOSE_GRACE_MS
+  // after the LAST of them.
+  _scheduleSettleCheck() {
+    if (this._settleTimer) clearTimeout(this._settleTimer);
+    this._settleTimer = setTimeout(() => {
+      this._settleTimer = null;
       try {
-        this._tryAutoCloseStaleRun();
+        this._settleOpenRun();
       } catch {
         /* best-effort safety net - a miss here just leaves the row as-is */
       }
     }, AUTO_CLOSE_GRACE_MS);
-    if (this._autoCloseTimer.unref) this._autoCloseTimer.unref();
+    if (this._settleTimer.unref) this._settleTimer.unref();
   }
 
-  // Shared terminal-state closer for any 'running' row being ended without
-  // the bot's own authoritative RUN-END line (auto-close/crash/stop/
-  // interrupt) - derives accountsProcessed/gained/totals from
-  // account_history instead, and finalizes accounts this run left marked
-  // 'running' according to whether the process stopped or failed.
-  _closeRunningRun(running, status, endTs, { code = null, signal = null } = {}) {
+  // True once every account the run declared has an ACCOUNT-END/ACCOUNT-ERROR.
+  _rosterResolved(running) {
+    if (!running.totalAccounts) return false;
+    const resolved = this.stmts.accountsResolvedSince.get(running.startTs);
+    return resolved.n >= running.totalAccounts;
+  }
+
+  // Safety net for a run whose RUN-END never arrived (e.g. the bot-side
+  // clustering bug where a worker's exit is never observed, so 'activeWorkers'
+  // never reaches 0 and RUN-END is never logged even though every account
+  // finished; or a crash that skipped it entirely).
+  //  - the Control API confirmed it saw RUN-END, or every declared account
+  //    resolved -> the run did finish: close as done, deriving its totals
+  //    from account_history.
+  //  - otherwise, if the wrapper already released its lock a grace period ago,
+  //    nothing else is coming: close as interrupted.
+  _settleOpenRun() {
+    const running = this.stmts.findRunningRun.get();
+    if (!running) return;
+
+    const pending = this._pendingExit;
+    if (!this._apiSawSummary && pending?.died) {
+      // The controller said "partial" with no RUN-END, and the API never
+      // confirmed one within the grace period: the script died.
+      this._closeRunningRun(running, "crashed", pending.at, {
+        code: pending.code,
+        signal: pending.signal,
+        outcome: pending.outcome,
+      });
+    } else if (this._apiSawSummary || this._rosterResolved(running)) {
+      // Either the Control API confirmed the script's final summary (so the
+      // run finished even if neither RUN-END nor the controller line reached
+      // us), or every declared account reported: it finished.
+      const resolved = this.stmts.accountsResolvedSince.get(running.startTs);
+      const exit = this._pendingExit;
+      this._closeRunningRun(
+        running,
+        "done",
+        exit?.at || resolved.lastTs || new Date().toISOString(),
+        { code: exit?.code ?? null, outcome: exit?.outcome ?? null },
+      );
+    } else if (this._lockReleasedAt) {
+      this._closeRunningRun(running, "interrupted", this._lockReleasedAt);
+    }
+  }
+
+  // Accounts this run left marked 'running' never logged a result of their
+  // own, and must not stay 'running' forever. How they're finalized depends on
+  // how the run ended: a completed run didn't fail because of them (success,
+  // with the diagnostic kept in last_error), a stopped run stopped them, and
+  // anything else counts against them.
+  _finalizeOrphanAccounts(startTs, runStatus, endTs) {
+    for (const { email } of this.stmts.orphanedRunningAccounts.all(startTs)) {
+      if (runStatus === "done") {
+        this.stmts.markAccountCompletedWithoutResult.run(
+          endTs,
+          "Run completed, but this account's own result was never logged (its worker likely failed silently).",
+          email,
+        );
+      } else {
+        const stopped = runStatus === "stopped";
+        this.stmts.markAccountInterrupted.run(
+          stopped ? "stopped" : "error",
+          endTs,
+          `Run ${runStatus} before this account finished`,
+          stopped ? "cancelled" : "failed",
+          email,
+        );
+      }
+    }
+  }
+
+  // The one terminal-state closer for a 'running' row ended without RUN-END's
+  // own totals (auto-close/crash/stop/interrupt/derived done): derives
+  // accountsProcessed/gained/totals from account_history and finalizes the
+  // accounts the run left 'running'. `code`/`signal` stay NULL unless the
+  // exit was actually observed.
+  _closeRunningRun(
+    running,
+    status,
+    endTs,
+    { code = null, signal = null, outcome = null } = {},
+  ) {
     this._pendingDelay = null;
     const totals = this.stmts.sumHistorySince.get(running.startTs);
     const resolved = this.stmts.accountsResolvedSince.get(running.startTs);
@@ -952,52 +1148,62 @@ class Store {
       runtimeMin,
       code,
       signal,
+      outcome,
       running.id,
     );
 
-    for (const row of this.stmts.orphanedRunningAccounts.all(running.startTs)) {
-      this.stmts.markAccountInterrupted.run(
-        status === "stopped" ? "stopped" : "error",
-        endTs,
-        `Run ${status} before this account finished`,
-        row.email,
-      );
-    }
-
+    this._finalizeOrphanAccounts(running.startTs, status, endTs);
     this._resetCompletionEvidence();
   }
 
-  // Safety net for the bot-side clustering bug where a worker's exit is
-  // never observed by its primary, so 'activeWorkers' never reaches 0 and
-  // RUN-END is never logged even though every account actually finished.
-  // Once every account the run declared (total_accounts) has resolved
-  // (ACCOUNT-END or ACCOUNT-ERROR) since it started, treat the run as done
-  // and derive its totals from account_history instead of waiting forever.
-  _tryAutoCloseStaleRun() {
-    const running = this.stmts.findRunningRun.get();
-    if (!running || !running.totalAccounts) return;
-
-    const resolved = this.stmts.accountsResolvedSince.get(running.startTs);
-    if (!resolved || resolved.n < running.totalAccounts) return;
-
-    this._closeRunningRun(running, "done", resolved.lastTs || new Date().toISOString());
-  }
-
-  closeRunOnExit(exit) {
+  /**
+   * Records how a run's process ended. Fed from two sources that describe the
+   * same event: the Control API's /status exit (`lastExit`, via server.js) and,
+   * on v5, its CONTROLLER log line (`fromLog`).
+   *
+   * `exit` is { code, signal, at, status } where `status` is the Control API's
+   * own verdict (completed | partial | failed | cancelled) - absent on v4,
+   * where the outcome is inferred from code/signal alone.
+   *
+   * Both sources may arrive in either order relative to RUN-END and to each
+   * other, so every branch is idempotent. Only the log line is ordered
+   * relative to RUN-END (it always follows it), so only it may conclude that
+   * RUN-END is never coming.
+   */
+  closeRunOnExit(exit, { fromLog = false, summarySeen = false } = {}) {
+    // `summarySeen`: the Control API says RUN-END was logged. It reads the log
+    // itself, so this holds even when this dashboard missed the line.
+    if (summarySeen) this._apiSawSummary = true;
     const code = exit?.code ?? null;
     const signal = exit?.signal ?? null;
-    const stopped = Boolean(signal) || [130, 137, 143].includes(code);
-    const stopSignal = signal || ({ 130: "SIGINT", 137: "SIGKILL", 143: "SIGTERM" }[code] ?? null);
+    const outcome = RUN_OUTCOMES.has(exit?.status) ? exit.status : null;
     const exitAt = exit?.at || new Date().toISOString();
+    // An explicit "failed" verdict always wins; otherwise only a recognized
+    // stop signal / stop exit code counts as an intentional stop.
+    const stopped =
+      outcome === "cancelled" ||
+      (outcome !== "failed" &&
+        (STOP_SIGNALS.has(signal) || Object.hasOwn(STOP_SIGNAL_BY_CODE, code)));
+    const stopSignal = (STOP_SIGNALS.has(signal) ? signal : null) || STOP_SIGNAL_BY_CODE[code] || null;
 
-    if (stopped && this._recentRunEnd?.status === "done") {
-      const gapMs = Math.abs(
-        Date.parse(exitAt) - Date.parse(this._recentRunEnd.ts),
-      );
+    // RUN-END already closed the row: just add what the exit tells us.
+    const recent = this._recentRunEnd;
+    if (recent?.status === "done") {
+      const gapMs = Math.abs(Date.parse(exitAt) - Date.parse(recent.ts));
       if (Number.isFinite(gapMs) && gapMs <= AUTO_CLOSE_GRACE_MS) {
-        this.stmts.markRunStopped.run(code, stopSignal, this._recentRunEnd.id);
-        this._recentRunEnd.status = "stopped";
-        this._recentRunEnd.ts = exitAt;
+        if (outcome === "interrupted") {
+          this.stmts.markRunInterrupted.run(code, signal, recent.id);
+          recent.status = "interrupted";
+          recent.ts = exitAt;
+        } else if (stopped) {
+          // RUN-END reads status=partial even for a cancelled run, so the
+          // exit is what turns "done" into "stopped".
+          this.stmts.markRunStopped.run(code, stopSignal, outcome, recent.id);
+          recent.status = "stopped";
+          recent.ts = exitAt;
+        } else {
+          this.stmts.setRunExit.run(outcome, code, signal, recent.id);
+        }
         return true;
       }
     }
@@ -1009,42 +1215,78 @@ class Store {
       this._closeRunningRun(running, "stopped", exitAt, {
         code,
         signal: stopSignal,
+        outcome,
       });
       this._recentRunEnd = { id: running.id, ts: exitAt, status: "stopped" };
       return true;
     }
 
-    // A completed partial run exits with code 1, and its process-exit status
-    // can reach the dashboard just before the final RUN-END log event. If all
-    // declared accounts already have terminal log events, leave the row open
-    // for RUN-END (or the existing resolved-account auto-close) instead of
-    // misclassifying that normal partial completion as a crash.
-    if (running.totalAccounts != null) {
-      const resolved = this.stmts.accountsResolvedSince.get(running.startTs);
-      if (resolved.n >= running.totalAccounts) return false;
+    if (outcome === "interrupted") {
+      this._closeRunningRun(running, "interrupted", exitAt, {
+        code,
+        signal,
+        outcome,
+      });
+      return true;
     }
 
-    // A clean exit (code 0, no signal) almost always means the app already
-    // logged its own RUN-END line, which the "run-end" event handler above
-    // closes with the real accounts/points data. Racing ahead here would
-    // stamp this row 'done' with everything NULL, then force run-end into
-    // creating a second, orphaned row once it can't find this one anymore -
-    // exactly the empty "Done -/N" duplicates this was producing. Only step
-    // in for crashes/kills, where no RUN-END line is ever coming.
-    if (!signal && code === 0) return false;
+    // A completed-with-partial-features run exits non-zero, and the exit
+    // event can reach us just before the final RUN-END. Whenever the run
+    // plausibly finished (every account resolved, or a clean exit) leave the
+    // row for RUN-END instead of misreading a normal exit as a crash or
+    // racing ahead and stamping the row 'done' with every total NULL - which
+    // forces RUN-END into creating a second, empty row. Only the ordered log
+    // line can say RUN-END is not coming.
+    // The exception is a v5 "partial" verdict reaching us through the log
+    // while the row is still open: RUN-END always precedes that line, so it
+    // means the script died before its final summary (even if every account
+    // had already reported) and must not be recorded as a finished run.
+    // Unless the Control API says it did see RUN-END, in which case the
+    // script finished and only our own copy of the line is missing.
+    //
+    // That verdict can't be final yet, though: the controller line is logged
+    // BEFORE the /status exit event that carries the API's RUN-END evidence,
+    // so when the dashboard has missed RUN-END the line arrives first. Defer
+    // the decision for the grace period; the exit event (or the settle check)
+    // then resolves it.
+    const diedBeforeSummary =
+      fromLog && outcome === "partial" && !this._apiSawSummary;
+    if (diedBeforeSummary) {
+      this._pendingExit = { code, signal, outcome, at: exitAt, died: true };
+      this._scheduleSettleCheck();
+      return false;
+    }
+    // The exit event, arriving after such a deferred verdict, saying the API
+    // never saw RUN-END either: nothing is coming, so it is a crash now.
+    const apiDenied = !fromLog && this._pendingExit?.died && !summarySeen;
+    const finished =
+      !apiDenied &&
+      outcome !== "failed" &&
+      (this._rosterResolved(running) ||
+        (outcome === "partial" && this._apiSawSummary) ||
+        outcome === "completed" ||
+        (outcome == null && !signal && code === 0));
+    if (finished) {
+      if (!fromLog) {
+        // Wait for RUN-END / the controller line - but if the API already
+        // confirmed the summary, don't depend on either arriving: remember the
+        // exit and let the settle check close the row if they never do.
+        if (this._apiSawSummary) {
+          this._pendingExit = { code, outcome, at: exitAt };
+          this._scheduleSettleCheck();
+        }
+        return false;
+      }
+      this._closeRunningRun(running, "done", exitAt, { code, outcome });
+      this._recentRunEnd = { id: running.id, ts: exitAt, status: "done" };
+      return true;
+    }
 
-    // This path comes from the Control API directly observing its own child
-    // process exit, so (unlike the "interrupted" paths above) we have real
-    // evidence here: a signal means something intentionally stopped it
-    // (stopped), while a bare non-zero code with no signal means the app
-    // exited on its own with a failure (crashed).
-    const status = signal ? "stopped" : "crashed";
-    this._closeRunningRun(
-      running,
-      status,
-      exit?.at || new Date().toISOString(),
-      { code, signal },
-    );
+    // Reaching here means the process exited non-zero (or the controller said
+    // "failed") before the run's accounts were all accounted for: this path
+    // comes from directly observing the exit, so unlike the "interrupted"
+    // paths we have real evidence it crashed.
+    this._closeRunningRun(running, "crashed", exitAt, { code, signal, outcome });
     return true;
   }
 
@@ -1140,8 +1382,9 @@ class Store {
   }
 
   close() {
-    if (this._autoCloseTimer) clearTimeout(this._autoCloseTimer);
+    if (this._settleTimer) clearTimeout(this._settleTimer);
     if (this._zeroStartWatchdog) clearInterval(this._zeroStartWatchdog);
+    this._flushLastTs();
     this.saveNow();
     this.db.close();
   }

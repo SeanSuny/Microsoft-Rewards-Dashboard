@@ -5,7 +5,8 @@
   "description": "Dashboard for script",
   "main": "server.js",
   "scripts": {
-    "start": "node --env-file-if-exists=.env server.js"
+    "start": "node --env-file-if-exists=.env server.js",
+    "test": "node --test \"test/*.test.js\""
   },
   "engines": {
     "node": ">=22.13.0"

@@ -23,8 +23,10 @@ const ACCOUNT_ERR_RE = /^(\S+@\S+):\s([\s\S]*)$/;
 // worker that's still silently in progress - it never leaves 'running'.
 // Observed in production for both the mobile and desktop flow wrappers, so
 // this is treated as an equally authoritative account-level failure signal.
+// v4 logged "Mobile flow failed" / "Desktop flow failed"; v5 logs "Account
+// flow failed" - all three are accepted.
 const FLOW_FAILED_RE =
-  /^(?:Mobile|Desktop) flow failed for\s(\S+@\S+):\s([\s\S]*)$/;
+  /^(?:Mobile|Desktop|Account) flow failed for\s(\S+@\S+):\s([\s\S]*)$/;
 const RUN_START_RE =
   /^Starting Microsoft Rewards Script\s\|\sv([\w.\-]+)\s\|\sAccounts:\s(\d+)\s\|\sClusters:\s(\d+)$/;
 const RUN_END_RE =
@@ -34,8 +36,10 @@ const RUN_END_RE =
 // fraction of the run's total time.
 const ACCOUNT_DELAY_RE =
   /^Waiting\s([\d.]+)\sseconds before starting the next account(?:\s\((\S+@\S+)\))?$/;
+// v5 logs streakProtectionEnabled=null when the protection state couldn't be
+// read, so "null" is a valid value alongside true/false.
 const STREAK_PROTECTION_RE =
-  /^Snapshot complete\s\|\soffers=(\d+)\s\|\sreportable=(\d+)\s\|\sstreaks=(\d+)\s\|\sstreakProtectionEnabled=(true|false)\s\|\sstreakProtectionRemainingDays=(\d+|null)\s\|\sstreakCounter=(\d+|null)\s\|\slevel=([^|]+)\s\|\saccount=(\S+@\S+)$/;
+  /^Snapshot complete\s\|\soffers=\d+\s\|\sreportable=\d+\s\|\sstreaks=\d+\s\|\sstreakProtectionEnabled=(?<enabled>true|false|null)\s\|\sstreakProtectionRemainingDays=(?<days>\d+|null)\s\|\sstreakCounter=(?<counter>\d+|null)\s\|\slevel=[^|]+\s\|\saccount=(?<email>\S+@\S+)$/;
 
 // src/browser/auth/methods/PasswordlessLogin.ts - the only login flow that
 // logs an actual value a human needs to act on before the bot can proceed
@@ -57,6 +61,13 @@ const WRAPPER_LINE_RE = /^\[[^\]]*\]\s\[run_daily\.sh\]\s([\s\S]*)$/;
 const WRAPPER_LOCK_ACQUIRED_RE =
   /^Lock acquired successfully\s\(PID:\s*(\d+)\)$/;
 const WRAPPER_LOCK_RELEASED_RE = /^Lock released\s\(PID:\s*(\d+)\)$/;
+// Optional randomized delay before the run actually launches (the seconds
+// figure is authoritative; the "N minutes" part is rounded).
+const WRAPPER_SLEEP_RE = /^Sleeping for [^(]*\((\d+)\sseconds?\)$/;
+const WRAPPER_STARTING_RE = /^Starting script\.\.\.$/;
+// src/control-api/trigger.js, when skipIfRunning is on and /start returns 409.
+const TRIGGER_SKIPPED_RE =
+  /^\[trigger\]\sA run is already in progress\.\sSkipping as configured\.$/;
 // "Script finished" is printed right before the wrapper's natural exit
 // (which is what triggers the EXIT trap that logs "Lock released"). Kept as
 // its own event kind (see store.js) rather than folded into "Lock released",
@@ -84,6 +95,49 @@ const WRAPPER_SCRIPT_FAILED_RE = /^ERROR: Script failed(?:\s*\(via API\))?!$/;
 // when RUN-END itself never gets logged.
 const CLUSTER_WORKER_EXIT_RE =
   /^Worker\s+(\d+)\s+exit\s+\|\s+Code:\s*(-?\d+|n\/a)\s+\|\s+Signal:\s*([^|]+)\s+\|\s+Active workers:\s*(\d+)$/;
+
+// v5's Control API (src/control-api/processManager.js _finalize) logs the
+// final outcome of every run it launched - cron runs included, since
+// run_daily.sh triggers through the API - under title CONTROLLER:
+//   "Run completed (code 0)."            every account fully succeeded
+//   "Run partial (code 0)."              finished, but some features were incomplete
+//   "Run interrupted (code 1)."          did not finish
+//   "Run cancelled (code 143)."          stopped on request
+//   "Run failed (error: <message>)."     no accounts ran / spawn failure
+//   "Run cancelled (code 143 / signal SIGTERM)."
+// It is written to the same ordered log stream right after RUN-END, so unlike
+// RUN-END's own status= (which reads "partial" even for a cancelled run) and
+// unlike the separate /status exit event, it needs no timing heuristics.
+const CONTROLLER_OUTCOME_RE =
+  /^Run (completed|partial|interrupted|failed|cancelled) \((?:error: ([\s\S]*)|code (-?\d+|n\/a)(?: \/ signal (\S+))?)\)\.$/;
+
+/**
+ * v5 logs the account's reason as a JSON string (reason="...", with embedded
+ * quotes escaped) built by joining every outstanding feature with "; ". The
+ * same feature can appear twice (e.g. one quota check reported from both the
+ * DESKTOP and MOBILE flows), so exact duplicate items are dropped.
+ */
+function decodeReason(raw) {
+  if (raw == null) return null;
+  let text = String(raw).trim();
+  if (text.startsWith('"')) {
+    try {
+      text = JSON.parse(text);
+    } catch {
+      text = text.replace(/^"|"$/g, "");
+    }
+  }
+  const seen = new Set();
+  const items = [];
+  for (const part of text.split(/;\s+/)) {
+    const item = part.trim();
+    if (item && !seen.has(item)) {
+      seen.add(item);
+      items.push(item);
+    }
+  }
+  return items.join("; ") || null;
+}
 
 /**
  * Strips the leading Docker timestamp, returns { dockerTs, rest }.
@@ -137,6 +191,9 @@ function parseLine(rawLine) {
         };
       break;
     }
+    // v5 logs an account with status=skipped under ACCOUNT-SKIP instead of
+    // ACCOUNT-END, with an otherwise identical message.
+    case "ACCOUNT-SKIP":
     case "ACCOUNT-END": {
       const am = ACCOUNT_END_RE.exec(message);
       if (am) {
@@ -148,8 +205,10 @@ function parseLine(rawLine) {
           oldPoints: Number(am[3]),
           newPoints: Number(am[4]),
           durationSec: Number(am[5]),
+          // v4's "Completed account:" line carries no status= and was only
+          // ever logged for a successful account.
           accountStatus: am[6] || "completed",
-          error: am[7] || null,
+          error: decodeReason(am[7]),
         };
       }
       break;
@@ -184,7 +243,8 @@ function parseLine(rawLine) {
           oldTotal: Number(am[3]),
           newTotal: Number(am[4]),
           runtimeMin: Number(am[5]),
-          terminalStatus: am[6] || "completed",
+          // null on v4, whose RUN-END has no status=.
+          terminalStatus: am[6] || null,
         };
       }
       break;
@@ -206,12 +266,19 @@ function parseLine(rawLine) {
         return {
           ...base,
           kind: "streak-protection",
-          email: protection[8],
-          enabled: protection[4] === "true",
+          email: protection.groups.email,
+          enabled:
+            protection.groups.enabled === "null"
+              ? null
+              : protection.groups.enabled === "true",
           remainingDays:
-            protection[5] === "null" ? null : Number(protection[5]),
+            protection.groups.days === "null"
+              ? null
+              : Number(protection.groups.days),
           streakCounter:
-            protection[6] === "null" ? null : Number(protection[6]),
+            protection.groups.counter === "null"
+              ? null
+              : Number(protection.groups.counter),
         };
       }
       break;
@@ -226,22 +293,33 @@ function parseLine(rawLine) {
       break;
     }
     case "FLOW": {
-      // Reuses the existing "account-error" event kind (not a new kind) so
-      // the store's resolution-counting and orphan-cleanup logic - all of
-      // which is keyed off title === 'ACCOUNT-ERROR', not "kind" - picks
-      // this up for free with no store.js changes needed. The original
-      // "FLOW" title/message are still fully recoverable from `raw`.
+      // Reported as an "account-error" event; the store keys its
+      // account-resolution logic off `kind`, so the original FLOW title is
+      // left intact.
       if (level.toLowerCase() === "error") {
         const fm = FLOW_FAILED_RE.exec(message);
         if (fm) {
           return {
             ...base,
-            title: "ACCOUNT-ERROR",
             kind: "account-error",
             email: fm[1],
             error: fm[2],
           };
         }
+      }
+      break;
+    }
+    case "CONTROLLER": {
+      const cm = CONTROLLER_OUTCOME_RE.exec(message);
+      if (cm) {
+        return {
+          ...base,
+          kind: "controller-outcome",
+          outcome: cm[1],
+          error: cm[2] || null,
+          code: cm[3] == null || cm[3] === "n/a" ? null : Number(cm[3]),
+          signal: cm[4] || null,
+        };
       }
       break;
     }
@@ -280,6 +358,19 @@ function parseLine(rawLine) {
  * wrapper lines that aren't one of the specific lifecycle events we track.
  */
 function parseWrapperLine(dockerTs, clean) {
+  if (TRIGGER_SKIPPED_RE.test(clean.trim())) {
+    return {
+      ts: dockerTs,
+      userName: "run_daily.sh",
+      level: "warn",
+      platform: "MAIN",
+      title: "WRAPPER",
+      message: "Scheduled run skipped: a run was already in progress",
+      raw: clean,
+      kind: "wrapper-run-skipped",
+    };
+  }
+
   const wm = WRAPPER_LINE_RE.exec(clean);
   if (!wm) return null;
   const message = wm[1];
@@ -302,6 +393,14 @@ function parseWrapperLine(dockerTs, clean) {
   if (released)
     return { ...base, kind: "wrapper-lock-released", pid: released[1] };
 
+  const sleep = WRAPPER_SLEEP_RE.exec(message);
+  if (sleep)
+    return { ...base, kind: "wrapper-sleep", seconds: Number(sleep[1]) };
+
+  if (WRAPPER_STARTING_RE.test(message)) {
+    return { ...base, kind: "wrapper-starting" };
+  }
+
   if (WRAPPER_SCRIPT_COMPLETED_RE.test(message)) {
     return { ...base, kind: "wrapper-script-completed" };
   }
@@ -319,4 +418,4 @@ function parseWrapperLine(dockerTs, clean) {
   return null;
 }
 
-module.exports = { parseLine };
+module.exports = { parseLine, decodeReason };

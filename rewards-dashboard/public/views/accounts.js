@@ -193,6 +193,16 @@ function partialReasonFeatures(reason) {
   }).filter(Boolean);
 }
 
+// last_error holds the list of incomplete features only for an account that
+// finished "partial" (or, for rows recorded before outcomes were stored, one
+// that succeeded with a reason). For failed/cancelled accounts it is a plain
+// error message and must not be split into pseudo-features.
+function partialReason(account) {
+  if (account.lastOutcome === "partial") return account.lastError;
+  if (account.lastOutcome == null && account.status === "success") return account.lastError;
+  return null;
+}
+
 function featureChips(account) {
   const activities = Array.isArray(account.activities) ? account.activities : [];
   const earned = new Map();
@@ -389,7 +399,9 @@ function renderAccountPanel(a, live) {
   const nextAccountEmail = context?.status?.pendingDelay?.nextEmail || null;
   const statusKey = launching.has(a.index)
     ? "starting"
-    : displayStatus !== "running" && nextAccountEmail && a.email === nextAccountEmail
+    : U.sleepRemainingSec(context?.status) != null && a.configured
+      ? "sleeping"
+      : displayStatus !== "running" && nextAccountEmail && a.email === nextAccountEmail
       ? "pending"
       : displayStatus;
 
@@ -429,6 +441,7 @@ function renderAccountPanel(a, live) {
     full: "ph-check-circle",
     success: "ph-check-circle",
     partial: "ph-warning-circle",
+    skipped: "ph-skip-forward-circle",
     done: "ph-check-circle",
     error: "ph-x-circle",
     crashed: "ph-x-circle",
@@ -438,6 +451,8 @@ function renderAccountPanel(a, live) {
     starting: "ph-circle-notch",
     stopping: "ph-stop-circle",
     pending: "ph-clock",
+    sleeping: "ph-moon",
+    stalled: "ph-pause-circle",
     idle: "ph-minus-circle",
   };
   const statusRail = `
@@ -448,13 +463,15 @@ function renderAccountPanel(a, live) {
     featureChips({
       ...(live || {}),
       lastError:
-        displayStatus !== a.status ? live?.error || null : a.lastError || live?.error,
+        displayStatus !== a.status
+          ? live?.error || null
+          : partialReason(a) || live?.error,
     }),
     earnableChips(live || {}),
   ].filter(Boolean).join("");
   const featuresOpen = expandedFeatures.has(a.key);
   const featureDetails = `<details class="account-feature-details" data-feature-details="${U.escapeAttr(a.key)}" ${featuresOpen ? "open" : ""}>
-      <summary><span class="acc-detail-toggle account-feature-caret" aria-hidden="true">\u25b8</span><span>Activity Status</span></summary>
+      <summary><span class="acc-detail-toggle account-feature-caret" aria-hidden="true"><i class="ph ph-caret-right"></i></span><span>Activity Status</span></summary>
       <div class="account-feature-chips">${featureChipsHtml || '<span class="point-source">No feature results reported</span>'}</div>
     </details>`;
 
@@ -465,7 +482,7 @@ function renderAccountPanel(a, live) {
         <div class="account-card-main">
           <div class="panel-head">
             <h2>
-                <button type="button" class="acc-detail-toggle" data-toggle-details="${U.escapeAttr(a.key)}" aria-expanded="${isExpanded}" aria-controls="${detailsId}" title="${isExpanded ? "Collapse details" : "Expand details"}">\u25b8</button>
+                <button type="button" class="acc-detail-toggle" data-toggle-details="${U.escapeAttr(a.key)}" aria-expanded="${isExpanded}" aria-controls="${detailsId}" title="${isExpanded ? "Collapse details" : "Expand details"}"><i class="ph ph-caret-right" aria-hidden="true"></i></button>
               ${U.escapeHtml(a.email)}
             </h2>
             ${a.index != null ? `<span class="tag-mini acc-tag-account-id">ACCOUNT_${a.index}</span>` : ""}
