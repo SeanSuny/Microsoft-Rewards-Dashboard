@@ -30,7 +30,7 @@ const FLOW_FAILED_RE =
 const RUN_START_RE =
   /^Starting Microsoft Rewards Script\s\|\sv([\w.\-]+)\s\|\sAccounts:\s(\d+)\s\|\sClusters:\s(\d+)$/;
 const RUN_END_RE =
-  /^Completed all accounts\s\|\saccountsProcessed=(\d+)\s\|\spointsGained=(-?\d+(?:\.\d+)?|unknown)\s\|\spreviousBalance=(\d+(?:\.\d+)?)\s\|\scurrentBalance=(\d+(?:\.\d+)?)\s\|\sruntimeMinutes=([\d.]+)(?:\s\|\sstatus=(\S+))?$/;
+  /^(?:Completed all accounts|Run interrupted)\s\|\saccountsProcessed=(\d+)\s\|\spointsGained=(-?\d+(?:\.\d+)?|unknown)\s\|\spreviousBalance=(\d+(?:\.\d+)?)\s\|\scurrentBalance=(\d+(?:\.\d+)?)\s\|\sruntimeMinutes=([\d.]+)(?:\s\|\sstatus=(\S+))?$/;
 // src/index.ts's waitBeforeNextAccount() - with accountDelay, accounts start
 // one at a time now rather than together, so this wait can be a large
 // fraction of the run's total time.
@@ -84,7 +84,8 @@ const WRAPPER_SCRIPT_COMPLETED_RE =
 // observed in production as "ERROR: Script failed (via API)!" when the run
 // was invoked through the Control API, vs. the bare form for a cron-invoked
 // run.
-const WRAPPER_SCRIPT_FAILED_RE = /^ERROR: Script failed(?:\s*\(via API\))?!$/;
+const WRAPPER_SCRIPT_FAILED_RE =
+  /^ERROR: Script failed(?:\s*\((?:via API|exit code \d+)\))?[!.]$/;
 
 // Cluster worker lifecycle, e.g.:
 // [MAIN] [WARN] MAIN [CLUSTER-WORKER-EXIT] Worker 34781 exit | Code: 0 | Signal: n/a | Active workers: 0

@@ -24,21 +24,133 @@
   --positive: #5f7556;
   --negative: #e67c7c;
   --warning: #7D4E00;
+  --energy-high-bg: #ede8f5;
   --energy-high-accent: #9664d0;
-
-  /* Layout */
-  --radius: 12px;
-  --space-account-columns: 0.85rem;
-  --shadow: 0 1px 2px rgba(20, 22, 30, 0.06), 0 1px 1px rgba(20, 22, 30, 0.04);
-  --mono:
-    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
-    monospace;
 
   /* Derived operational colours */
   --positive-bg: color-mix(in srgb, var(--positive) 16%, var(--surface));
   --negative-bg: color-mix(in srgb, var(--negative) 16%, var(--surface));
   --amber: var(--warning);
   --amber-bg: color-mix(in srgb, var(--amber) 14%, var(--surface));
+
+  /* =========================================================================
+     MEASUREMENT TOKENS
+     Every length, duration and layer used below comes from here. Relative
+     values (%, em, ch, vh/vw), unitless ratios, 0/auto, and the literal
+     technique values noted at their use sites are deliberately not tokens.
+     ========================================================================= */
+
+  /* Typography - sizes (rem, 16px root) */
+  --font-3xs: 0.65rem;    /* 10.4px  micro labels, icon glyphs, chart axis */
+  --font-2xs: 0.72rem;    /* 11.5px  captions, badges, table heads */
+  --font-xs: 0.8rem;      /* 12.8px  secondary / meta text */
+  --font-sm: 0.875rem;    /* 14px    compact UI text, tabs */
+  --font-base: 0.9375rem; /* 15px    body */
+  --font-md: 1rem;        /* 16px    panel headings, icon buttons */
+  --font-lg: 1.15rem;     /* 18.4px  page title, emphasis */
+  --font-xl: 1.5rem;      /* 24px    stat values */
+  --font-2xl: 2.25rem;    /* 36px    login approval number */
+
+  /* Typography - rhythm */
+  --leading-none: 1;
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.6; /* long-form / monospace blocks */
+  --tracking-tight: -0.02em;
+  --tracking-wide: 0.03em;
+  --mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+
+  /* Spacing scale - padding, margin, gap, offsets (named by px at 16px root) */
+  --space-2: 0.125rem;
+  --space-4: 0.25rem;
+  --space-6: 0.375rem;
+  --space-8: 0.5rem;
+  --space-10: 0.625rem;
+  --space-12: 0.75rem;
+  --space-14: 0.875rem;
+  --space-16: 1rem;
+  --space-20: 1.25rem;
+  --space-24: 1.5rem;
+  --space-32: 2rem;
+
+  /* Shape - radius and borders */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;     /* cards and panels */
+  --radius-pill: 999px;
+  --border-width: 1px;
+  --border-width-strong: 2px; /* focus ring, active tab underline */
+
+  /* Elevation (--shadow is overridden in dark mode) */
+  --shadow: 0 1px 2px rgba(20, 22, 30, 0.06), 0 1px 1px rgba(20, 22, 30, 0.04);
+  --shadow-raised: 0 6px 20px rgba(0, 0, 0, 0.15); /* menus, toasts */
+  --glow-blur: 4px;
+
+  /* Control heights (touch devices step up to --control-lg) */
+  --control-sm: 30px;
+  --control-md: 32px;
+  --control-lg: 38px;
+  --control-xl: 44px;     /* minimum touch target */
+
+  /* Indicator / glyph sizes */
+  --size-dot: 8px;        /* status dot, progress track, heatmap cell */
+  --size-icon: 16px;      /* checkbox, switch, stat icon */
+  --size-day: 12px;       /* accumulation-bar day */
+  --size-knob: 1.25rem;   /* reveal-toggle knob */
+  --size-badge: 1.5rem;   /* account rail icon, reveal-toggle height */
+
+  /* Layout */
+  --content-max: 1100px;
+  --space-account-columns: var(--space-14); /* gap between the account rail / details / actions columns; tightened on mobile */
+  --rail-column-width: 1.75rem;             /* account icon column */
+  --topbar-offset: 61px;  /* the sticky tab bar sits below the topbar; must match its rendered height */
+  --card-min-xs: 130px;   /* minimum track widths for auto-fit/auto-fill grids (130 and 140 are */
+  --card-min-sm: 140px;   /* not interchangeable: either choice changes a grid's column count) */
+  --card-min-md: 220px;
+  --card-min-lg: 240px;
+  --card-min-xl: 260px;
+  --block-sm: 200px;      /* chart / editor / diagnostics block heights */
+  --block-md: 260px;
+  --block-lg: 340px;
+  --toast-width: 380px;
+  --field-grow-basis: 180px;
+  --action-min-width: 5rem;
+
+  /* Component dimensions */
+  --stat-card-min-height: 135px;
+  --chip-min-height: 64px;
+  --chip-min-height-sm: 48px;
+  --hero-card-width: 486px;
+  --hero-pts-width: 108px;
+  --hero-pts-width-md: 96px;    /* tablet */
+  --hero-pts-width-sm: 80px;    /* phones */
+  --log-height: 60vh;
+  --log-level-width: 3.4rem;
+  --log-tag-width: 11rem;
+  --log-tag-width-sm: 5.5rem;
+  --log-account-max-sm: 7rem;
+  --toggle-width: 2.65rem;      /* config reveal toggle */
+  --reveal-help-basis: 18rem;
+
+  /* Motion */
+  --duration-fast: 0.12s;       /* hover / colour changes */
+  --duration-base: 0.2s;
+  --duration-slow: 0.35s;
+  --ticker-duration: 14s;       /* overridden per element by util.js renderTicker */
+
+  /* Layers */
+  --z-raised: 2;
+  --z-tabbar: 15;
+  --z-topbar: 20;
+  --z-menu: 30;
+  --z-overlay: 100;             /* skip link, toasts */
+
+  /* Breakpoints - media queries cannot read custom properties, so these are
+     the literal values used by every @media rule in this file:
+     420px (small phone) / 600px / 768px (mobile) / 769-1024px (tablet) */
 }
 
 
@@ -69,7 +181,7 @@ body {
   background: var(--canvas);
   color: var(--text);
   font:
-    15px/1.5 -apple-system,
+    var(--font-base)/var(--leading-normal) -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
     Roboto,
@@ -93,9 +205,9 @@ body {
   top: 0;
   background: var(--accent);
   color: var(--text-inverse);
-  padding: 0.6rem 1rem;
-  z-index: 100;
-  border-radius: 0 0 6px 0;
+  padding: var(--space-10) var(--space-16);
+  z-index: var(--z-overlay);
+  border-radius: 0 0 var(--radius-md) 0;
 }
 .skip-link:focus {
   left: 0;
@@ -107,16 +219,16 @@ select:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline: var(--border-width-strong) solid var(--focus);
+  outline-offset: var(--space-2);
 }
 
 code {
   font-family: var(--mono);
   font-size: 0.88em;
   background: var(--surface-alt);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
   padding: 0.05em 0.35em;
 }
 
@@ -127,12 +239,12 @@ code {
 
 /* Main layout / tab panels */
 main {
-  max-width: 1100px;
+  max-width: var(--content-max);
   margin: 0 auto;
-  padding: 1.25rem;
+  padding: var(--space-20);
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: var(--space-24);
 }
 
 #tabPanels {
@@ -142,7 +254,7 @@ main {
 .tab-panel {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: var(--space-24);
 }
 .tab-panel[hidden] {
   display: none;
@@ -154,43 +266,43 @@ main {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-8);
+  padding: var(--space-16) var(--space-20);
+  border-bottom: var(--border-width) solid var(--border);
   background: var(--surface);
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: var(--z-topbar);
 }
 
 .topbar h1 {
-  font-size: 1.15rem;
+  font-size: var(--font-lg);
   margin: 0;
 }
 
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-12);
   flex-wrap: wrap;
 }
 
 .controls-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .controls-group .icon-btn {
-  font-size: 1.05rem;
-  padding: 4px;
+  font-size: var(--font-md);
+  padding: var(--space-4);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 32px;
-  width: 32px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  height: var(--control-md);
+  width: var(--control-md);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
@@ -200,11 +312,11 @@ main {
 }
 
 .theme-select {
-  height: 32px;
-  padding: 4px 24px 4px 8px;
-  font-size: 0.88rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  height: var(--control-md);
+  padding: var(--space-4) var(--space-24) var(--space-4) var(--space-8);
+  font-size: var(--font-sm);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--text);
   font-weight: 600;
@@ -217,25 +329,25 @@ main {
 #statusBadge {
   margin: 0;
   flex-shrink: 0;
-  height: 32px;
+  height: var(--control-md);
   display: inline-flex;
   align-items: center;
-  padding: 0 10px;
-  font-size: 0.85rem;
+  padding: 0 var(--space-10);
+  font-size: var(--font-sm);
   font-weight: 600;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .status-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-8);
   background: var(--surface-alt);
   color: var(--text-muted);
 }
 .status-badge .dot {
-  width: 8px;
-  height: 8px;
+  width: var(--size-dot);
+  height: var(--size-dot);
   border-radius: 50%;
   background: currentColor;
 }
@@ -255,10 +367,10 @@ main {
 /* Tab bar */
 .tabbar {
   position: sticky;
-  top: 61px;
-  z-index: 15;
+  top: var(--topbar-offset);
+  z-index: var(--z-tabbar);
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--border-width) solid var(--border);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -267,11 +379,11 @@ main {
 }
 
 .tabbar-inner {
-  max-width: 1100px;
+  max-width: var(--content-max);
   margin: 0 auto;
   display: flex;
-  gap: 0.15rem;
-  padding: 0 1.25rem;
+  gap: var(--space-2);
+  padding: 0 var(--space-20);
   width: max-content;
   min-width: 100%;
 }
@@ -280,17 +392,17 @@ main {
   appearance: none;
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-bottom: var(--border-width-strong) solid transparent;
   color: var(--text-muted);
   font: inherit;
-  font-size: 0.88rem;
+  font-size: var(--font-sm);
   font-weight: 600;
-  padding: 0.7rem 0.85rem;
+  padding: var(--space-12) var(--space-14);
   cursor: pointer;
   white-space: nowrap;
   transition:
-    color 0.12s ease,
-    border-color 0.12s ease;
+    color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
 }
 .tab:hover {
   color: var(--text);
@@ -303,20 +415,20 @@ main {
 
 /* Control strip (start / stop / restart) */
 .control-strip {
-  max-width: 1100px;
+  max-width: var(--content-max);
   margin: 0 auto;
-  padding: 0.85rem 1.25rem 0;
+  padding: var(--space-14) var(--space-20) 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--space-12);
   flex-wrap: wrap;
 }
 
 .ctl-state {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--space-10);
   min-width: 0;
   width: 100%;
 }
@@ -326,7 +438,7 @@ main {
 }
 
 .ctl-detail {
-  font-size: 0.82rem;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   overflow: hidden;
@@ -339,7 +451,7 @@ main {
 .ctl-actions {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-6);
 }
 
 .ctl-more {
@@ -349,14 +461,14 @@ main {
 .ctl-menu {
   position: absolute;
   right: 0;
-  top: calc(100% + 6px);
-  z-index: 30;
-  min-width: 220px;
+  top: calc(100% + var(--space-6));
+  z-index: var(--z-menu);
+  min-width: var(--card-min-md);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
-  padding: 0.3rem;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
 }
@@ -367,9 +479,9 @@ main {
   border: none;
   text-align: left;
   font: inherit;
-  font-size: 0.85rem;
-  padding: 0.5rem 0.6rem;
-  border-radius: 6px;
+  font-size: var(--font-sm);
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-md);
   cursor: pointer;
   color: var(--text);
 }
@@ -387,32 +499,32 @@ main {
 /* Toasts */
 .toast-host {
   position: fixed;
-  right: 1rem;
-  bottom: 1rem;
-  z-index: 200;
+  right: var(--space-16);
+  bottom: var(--space-16);
+  z-index: var(--z-overlay);
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  max-width: min(380px, calc(100vw - 2rem));
+  gap: var(--space-8);
+  max-width: min(var(--toast-width), calc(100vw - var(--space-32)));
 }
 
 .toast {
-  padding: 0.65rem 0.9rem;
-  border-radius: 8px;
-  font-size: 0.85rem;
+  padding: var(--space-10) var(--space-14);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
   font-weight: 600;
   background: var(--surface);
   color: var(--text);
-  border: 1px solid var(--border);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
-  animation: toast-in 0.18s ease;
+  border: var(--border-width) solid var(--border);
+  box-shadow: var(--shadow-raised);
+  animation: toast-in var(--duration-base) ease;
 }
 .toast--out {
   opacity: 0;
-  transform: translateY(4px);
+  transform: translateY(var(--space-4));
   transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+    opacity var(--duration-base) ease,
+    transform var(--duration-base) ease;
 }
 .toast--success {
   border-color: var(--positive);
@@ -433,7 +545,7 @@ main {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(var(--space-6));
   }
   to {
     opacity: 1;
@@ -444,39 +556,39 @@ main {
 /* Login approval alerts */
 .login-codes-section {
   background: var(--amber-bg);
-  border: 2px solid var(--amber);
-  border-radius: var(--radius);
-  padding: 1.1rem 1.25rem;
+  border: var(--border-width-strong) solid var(--amber);
+  border-radius: var(--radius-lg);
+  padding: var(--space-16) var(--space-20);
   box-shadow: var(--shadow);
 }
 
 .login-codes-section h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
+  margin: 0 0 var(--space-12);
+  font-size: var(--font-md);
   color: var(--text);
 }
 
 .login-codes-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.9rem;
+  gap: var(--space-14);
 }
 
 .login-code-card {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
+  gap: var(--space-14);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.7rem 1.1rem;
-  min-width: 220px;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-12) var(--space-16);
+  min-width: var(--card-min-md);
 }
 
 .login-code-number {
-  font-size: 2.4rem;
+  font-size: var(--font-2xl);
   font-weight: 800;
-  line-height: 1;
+  line-height: var(--leading-none);
   font-variant-numeric: tabular-nums;
   color: var(--accent);
   min-width: 2.2ch;
@@ -486,14 +598,14 @@ main {
 .login-code-info {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: var(--space-2);
 }
 .login-code-name {
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: var(--font-base);
 }
 .login-code-countdown {
-  font-size: 0.8rem;
+  font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
 }
@@ -504,11 +616,11 @@ main {
 
 /* Footer */
 .foot {
-  max-width: 1100px;
+  max-width: var(--content-max);
   margin: 0 auto;
-  padding: 0 1.25rem 2rem;
+  padding: 0 var(--space-20) var(--space-32);
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--font-xs);
 }
 
 
@@ -520,10 +632,10 @@ main {
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
-  font-size: 0.78rem;
+  gap: var(--space-6);
+  padding: var(--space-2) var(--space-8);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-xs);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -555,14 +667,14 @@ main {
 /* Mini tags */
 .tag-mini {
   display: inline-block;
-  font-size: 0.66rem;
+  font-size: var(--font-3xs);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: 0.1rem 0.35rem;
-  border-radius: 4px;
+  letter-spacing: var(--tracking-wide);
+  padding: var(--space-2) var(--space-6);
+  border-radius: var(--radius-sm);
   background: var(--surface-alt);
-  border: 1px solid var(--border);
+  border: var(--border-width) solid var(--border);
   color: var(--text-muted);
   vertical-align: middle;
 }
@@ -570,14 +682,14 @@ main {
 /* Inline link-style buttons */
 .link-btn {
   background: none;
-  border: 1px solid var(--border);
+  border: var(--border-width) solid var(--border);
   color: var(--accent);
-  border-radius: 6px;
-  padding: 0.3rem 0.65rem;
-  font-size: 0.82rem;
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-10);
+  font-size: var(--font-xs);
   cursor: pointer;
   font-weight: 600;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease, color var(--duration-fast) ease;
 }
 
 /* Inactive hover to --accent */
@@ -608,23 +720,23 @@ main {
 /* Panel / card container */
 .panel {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
-  padding: 1.25rem;
+  padding: var(--space-20);
 }
 
 .panel h2 {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--font-md);
 }
 
 .panel-head {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
-  margin-bottom: 1rem;
+  gap: var(--space-8) var(--space-12);
+  margin-bottom: var(--space-16);
 }
 .panel-head > .btn,
 .panel-head > .check,
@@ -635,31 +747,31 @@ main {
 }
 
 .panel-sub {
-  font-size: 0.8rem;
+  font-size: var(--font-xs);
   color: var(--text-muted);
 }
 
 .hint {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--font-xs);
   color: var(--text-muted);
-  line-height: 1.55;
+  line-height: var(--leading-relaxed);
 }
 
 /* Notices */
 .notice {
-  margin: 0 0 1rem;
-  padding: 0.7rem 0.9rem;
-  border-radius: 8px;
-  font-size: 0.84rem;
-  line-height: 1.5;
-  border: 1px solid var(--border);
+  margin: 0 0 var(--space-16);
+  padding: var(--space-12) var(--space-14);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  line-height: var(--leading-normal);
+  border: var(--border-width) solid var(--border);
   background: var(--surface-alt);
   color: var(--text-muted);
 }
 .notice ul {
-  margin: 0.4rem 0 0;
-  padding-left: 1.1rem;
+  margin: var(--space-6) 0 0;
+  padding-left: var(--space-16);
 }
 .notice--warn {
   background: var(--amber-bg);
@@ -677,38 +789,38 @@ main {
   color: var(--text);
 }
 .notice-actions {
-  margin-top: 0.5rem;
+  margin-top: var(--space-8);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.6rem;
+  gap: var(--space-10);
 }
 .notice-sub {
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: var(--font-xs);
 }
 
 /* Buttons */
 .btn {
   appearance: none;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   font-weight: 600;
-  height: 34px;
-  padding: 0 0.8rem;
-  border-radius: 8px;
-  border: 1px solid var(--border);
+  height: var(--control-md);
+  padding: 0 var(--space-12);
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--border);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
+  gap: var(--space-6);
   white-space: nowrap;
   transition:
-    background 0.12s ease,
-    border-color 0.12s ease;
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
 }
 .btn:hover:not(:disabled) {
   background: var(--hover);
@@ -737,83 +849,83 @@ main {
 }
 
 .btn-icon {
-  width: 34px;
+  width: var(--control-md);
   padding: 0;
-  font-size: 1.05rem;
+  font-size: var(--font-md);
 }
 .btn-small {
-  height: 28px;
-  padding: 0 0.6rem;
-  font-size: 0.78rem;
+  height: var(--control-sm);
+  padding: 0 var(--space-10);
+  font-size: var(--font-xs);
 }
 
 /* Forms & inputs */
 .form {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: var(--space-14);
 }
 
 .form-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-8);
   flex-wrap: wrap;
-  margin-top: 0.35rem;
+  margin-top: var(--space-6);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.8rem;
+  gap: var(--space-4);
+  font-size: var(--font-xs);
   font-weight: 600;
   color: var(--text-muted);
 }
 .field--inline {
   flex-direction: row;
   align-items: center;
-  gap: 0.45rem;
+  gap: var(--space-8);
 }
 .field--grow {
-  flex: 1 1 180px;
+  flex: 1 1 var(--field-grow-basis);
 }
 
 fieldset.field {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.7rem;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-12);
 }
 
 fieldset.field legend {
-  padding: 0 0.3rem;
+  padding: 0 var(--space-4);
 }
 
 .input {
   font: inherit;
-  font-size: 0.88rem;
+  font-size: var(--font-sm);
   font-weight: 400;
   color: var(--text);
   background: var(--canvas);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  height: 34px;
-  padding: 0 0.6rem;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  height: var(--control-md);
+  padding: 0 var(--space-10);
   width: 100%;
 }
 .input--mono {
   font-family: var(--mono);
-  letter-spacing: 0.02em;
+  letter-spacing: var(--tracking-wide);
 }
 select.input {
   cursor: pointer;
-  padding-right: 1.5rem;
+  padding-right: var(--space-24);
 }
 
 .check {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.83rem;
+  gap: var(--space-6);
+  font-size: var(--font-xs);
   color: var(--text-muted);
   cursor: pointer;
   user-select: none;
@@ -821,35 +933,35 @@ select.input {
 }
 .check input {
   accent-color: var(--accent);
-  width: 15px;
-  height: 15px;
+  width: var(--size-icon);
+  height: var(--size-icon);
   cursor: pointer;
 }
 .check--row {
   white-space: normal;
   color: var(--text);
   align-items: flex-start;
-  line-height: 1.5;
+  line-height: var(--leading-normal);
 }
 .check--row input {
-  margin-top: 0.2rem;
+  margin-top: var(--space-4);
   flex-shrink: 0;
 }
 
 /* Segmented control */
 .seg {
   display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
 .seg-btn {
   appearance: none;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--font-xs);
   font-weight: 600;
-  padding: 0.3rem 0.65rem;
+  padding: var(--space-4) var(--space-10);
   border: none;
   background: var(--surface);
   color: var(--text-muted);
@@ -857,7 +969,7 @@ select.input {
 }
 
 .seg-btn + .seg-btn {
-  border-left: 1px solid var(--border);
+  border-left: var(--border-width) solid var(--border);
 }
 
 .seg-btn:hover {
@@ -881,22 +993,22 @@ select.input {
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-size: var(--font-sm);
 }
 
 th {
   color: var(--text-muted);
   font-weight: 600;
-  font-size: 0.76rem;
+  font-size: var(--font-2xs);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: var(--tracking-wide);
 }
 
 th,
 td {
   text-align: left;
-  padding: 0.6rem 0.7rem;
-  border-bottom: 1px dotted var(--border);
+  padding: var(--space-10) var(--space-12);
+  border-bottom: var(--border-width) dotted var(--border);
   white-space: nowrap;
 }
 
@@ -915,50 +1027,50 @@ tbody tr:hover {
 .empty-note {
   color: var(--text-muted);
   font-style: italic;
-  padding: 0.5rem 0;
+  padding: var(--space-8) 0;
 }
 
 /* Key/value grids */
 .kv {
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 0.6rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(var(--card-min-md), 1fr));
+  gap: var(--space-10) var(--space-16);
 }
 .kv > div {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: var(--space-2);
   min-width: 0;
 }
 .kv dt {
-  font-size: 0.72rem;
+  font-size: var(--font-2xs);
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: var(--tracking-wide);
 }
 .kv dd {
   margin: 0;
-  font-size: 0.86rem;
+  font-size: var(--font-sm);
   overflow-wrap: anywhere;
 }
 
 /* Progress bar */
 .progress {
-  height: 8px;
-  border-radius: 999px;
+  height: var(--size-dot);
+  border-radius: var(--radius-pill);
   background: var(--surface-alt);
-  border: 1px solid var(--border);
+  border: var(--border-width) solid var(--border);
   overflow: hidden;
-  margin-bottom: 0.9rem;
+  margin-bottom: var(--space-14);
 }
 
 .progress-bar {
   height: 100%;
   width: 0;
   background: var(--accent);
-  transition: width 0.35s ease;
+  transition: width var(--duration-slow) ease;
 }
 
 /* Pre-run sleep reuses the pending palette */
@@ -970,8 +1082,8 @@ tbody tr:hover {
 .chart-wrap {
   position: relative;
   width: 100%;
-  min-height: 200px;
-  max-height: 340px;
+  min-height: var(--block-sm);
+  max-height: var(--block-lg);
   overflow: hidden;
 }
 
@@ -992,7 +1104,7 @@ tbody tr:hover {
 
 .chart-axis {
   fill: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-3xs);
   font-family: inherit;
   font-variant-numeric: tabular-nums;
 }
@@ -1022,14 +1134,14 @@ tbody tr:hover {
 
 .chart-bar {
   fill: var(--accent);
-  transition: fill 0.12s ease;
+  transition: fill var(--duration-fast) ease;
 }
 .chart-bar:hover {
   fill: var(--accent-hover);
 }
 
 .chart-empty {
-  padding: 3.5rem 0;
+  padding: var(--space-32) 0;
   text-align: center;
 }
 
@@ -1045,7 +1157,7 @@ tbody tr:hover {
 
 .exit-item,
 .diag-item {
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--border-width) solid var(--border);
 }
 .exit-item:last-child,
 .diag-item:last-child {
@@ -1061,8 +1173,8 @@ tbody tr:hover {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 0.7rem;
-  padding: 0.7rem 0.25rem;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-4);
   cursor: pointer;
   text-align: left;
   color: var(--text);
@@ -1074,7 +1186,7 @@ tbody tr:hover {
 
 .exit-when,
 .diag-when {
-  font-size: 0.83rem;
+  font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
@@ -1082,7 +1194,7 @@ tbody tr:hover {
 .exit-chevron {
   color: var(--text-muted);
   flex-shrink: 0;
-  font-size: 0.75rem;
+  font-size: var(--font-2xs);
 }
 
 /* Ticker - shared scrolling-text mechanics. Used by any single-line status
@@ -1120,19 +1232,19 @@ tbody tr:hover {
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.6rem;
+  gap: var(--space-10);
 }
 
 .stat-card {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
-  padding: 0.75rem 0.6rem;
+  padding: var(--space-12) var(--space-10);
   display: flex;
   flex-direction: column;
-  gap: 0.5rem; 
-  min-height: 135px; 
+  gap: var(--space-8); 
+  min-height: var(--stat-card-min-height); 
   align-items: center;
   justify-content: center;
   text-align: center;
@@ -1141,27 +1253,27 @@ tbody tr:hover {
 
 .stat-block-chip {
   background: var(--surface-alt);
-  border-radius: 8px;
-  padding: 0.5rem 0.6rem; 
+  border-radius: var(--radius-md);
+  padding: var(--space-8) var(--space-10); 
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 64px; 
+  min-height: var(--chip-min-height); 
   box-sizing: border-box;
 }
 
 .chip-sm-wrap {
-  padding: 0.5rem;
+  padding: var(--space-8);
 }
 
 .stat-num-val {
-  font-size: 1.6rem; 
+  font-size: var(--font-xl); 
   font-weight: 800;
-  line-height: 1;
+  line-height: var(--leading-none);
   color: var(--text);
-  letter-spacing: -0.02em;
+  letter-spacing: var(--tracking-tight);
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -1171,29 +1283,29 @@ tbody tr:hover {
 }
 
 .stat-value-sm {
-  font-size: 1rem; 
+  font-size: var(--font-md); 
   font-weight: 700;
-  line-height: 1.2;
+  line-height: var(--leading-tight);
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
 
 .stat-num-val.stat-value-sm,
 .stat-value-sm {
-  font-size: 1rem; 
+  font-size: var(--font-md); 
   font-weight: 700;
-  line-height: 1.2;
+  line-height: var(--leading-tight);
   white-space: normal !important;
   text-overflow: clip !important;
   overflow: visible !important;
 }
 
 .stat-block-unit {
-  font-size: 0.7rem; 
+  font-size: var(--font-2xs); 
   color: var(--text-muted);
   font-weight: 600;
   text-transform: lowercase;
-  margin-top: 0.2rem;
+  margin-top: var(--space-4);
   opacity: 0.8;
   white-space: normal !important;
   text-overflow: clip !important;
@@ -1205,16 +1317,16 @@ tbody tr:hover {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  gap: 0.35rem;
+  gap: var(--space-6);
   max-width: 100%;
 }
 
 .stat-label {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--font-2xs);
   color: var(--text-muted);
   font-weight: 600;
-  line-height: 1.2;
+  line-height: var(--leading-tight);
   white-space: normal !important; 
   text-overflow: clip !important;
   overflow: visible !important;
@@ -1225,13 +1337,13 @@ tbody tr:hover {
 .stat-icon-alert,
 .stat-icon-running,
 .stat-icon-idle {
-  width: 15px;
-  height: 15px;
+  width: var(--size-icon);
+  height: var(--size-icon);
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.65rem;
+  font-size: var(--font-3xs);
   font-weight: 800;
   flex-shrink: 0; 
 }
@@ -1259,7 +1371,7 @@ tbody tr:hover {
 .stat-icon-idle {
   color: var(--text-muted);
   background: var(--surface-alt);
-  border: 1px solid var(--border);
+  border: var(--border-width) solid var(--border);
 }
 
 .icon-alert-active {
@@ -1271,10 +1383,10 @@ tbody tr:hover {
 .run-progress-box {
   margin: 0 0 0 0; 
   width: 100%;
-  padding: 0.65rem 1.25rem;
+  padding: var(--space-10) var(--space-20);
   background: var(--surface); 
-  border: 1px solid var(--border);
-  border-radius: var(--radius); 
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg); 
   box-shadow: var(--shadow); 
 }
 
@@ -1283,19 +1395,19 @@ tbody tr:hover {
   justify-content: space-between;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 0.85rem;
+  gap: var(--space-8);
+  margin-bottom: var(--space-14);
 }
 
 .run-progress-title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--font-base);
   font-weight: 700;
   color: var(--text);
 }
 
 .run-progress-meta {
-  font-size: 0.82rem;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -1306,21 +1418,21 @@ tbody tr:hover {
 .accum-track {
   position: relative;
   background: var(--surface-alt);
-  border-radius: 8px;
-  padding: 4px;
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
   overflow-x: auto;
 }
 
 .accum-track::before {
   content: "";
   position: absolute;
-  left: 6px;
-  right: 6px;
+  left: var(--space-6);
+  right: var(--space-6);
   top: 50%;
-  height: 2px;
+  height: var(--border-width-strong);
   transform: translateY(-50%);
   background: color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   pointer-events: none;
 }
 
@@ -1329,25 +1441,25 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  height: 28px;
-  border-radius: 6px;
+  height: var(--control-sm);
+  border-radius: var(--radius-md);
   width: fit-content;
   overflow: visible;
 }
 
 .accum-day {
-  width: 12px;
-  border-radius: 3px;
+  width: var(--size-day);
+  border-radius: var(--radius-xs);
   position: relative;
-  margin: 0 2px;
+  margin: 0 var(--space-2);
   cursor: default;
-  flex: 0 0 12px;
-  transition: transform 0.15s ease;
+  flex: 0 0 var(--size-day);
+  transition: transform var(--duration-base) ease;
 }
 
 .accum-day:hover {
   transform: scale(1.15);
-  z-index: 2;
+  z-index: var(--z-raised);
 }
 
 .accum-day--a {
@@ -1359,14 +1471,14 @@ tbody tr:hover {
 }
 
 .accum-day--today {
-  outline: 1px solid var(--text);
-  outline-offset: 1px;
+  outline: var(--border-width) solid var(--text);
+  outline-offset: var(--space-2);
 }
 
 .accum-gap {
   align-self: center;
-  height: 6px;
-  border-radius: 999px;
+  height: var(--space-6);
+  border-radius: var(--radius-pill);
   transform: scaleY(0.8);
   flex: 0 0 auto;
   opacity: 0.85;
@@ -1378,12 +1490,12 @@ tbody tr:hover {
 
 .accum-gap--warn {
   background: var(--amber);
-  box-shadow: 0 0 4px var(--amber);
+  box-shadow: 0 0 var(--glow-blur) var(--amber);
 }
 
 .accum-gap--bad {
   background: var(--negative);
-  box-shadow: 0 0 4px var(--negative);
+  box-shadow: 0 0 var(--glow-blur) var(--negative);
   background-image: repeating-linear-gradient(
     90deg,
     transparent 0 4px,
@@ -1393,9 +1505,9 @@ tbody tr:hover {
 
 .accum-week-marker {
   position: relative;
-  width: 1px;
+  width: var(--border-width);
   align-self: stretch;
-  flex: 0 0 1px;
+  flex: 0 0 var(--border-width);
   background: repeating-linear-gradient(
     to bottom,
     var(--border-strong) 0px,
@@ -1403,17 +1515,17 @@ tbody tr:hover {
     transparent 3px,
     transparent 7px
   );
-  margin: 0 5px;
+  margin: 0 var(--space-4);
   opacity: 0.65;
 }
 
 .accum-week-marker::after {
   content: "";
   position: absolute;
-  top: -6px;
-  bottom: -6px;
-  left: -8px;
-  right: -8px;
+  top: calc(var(--space-6) * -1);
+  bottom: calc(var(--space-6) * -1);
+  left: calc(var(--space-8) * -1);
+  right: calc(var(--space-8) * -1);
 }
 
 /* Heatmap view */
@@ -1426,28 +1538,28 @@ tbody tr:hover {
 
 .heatmap {
     display: flex;
-    gap: 2px;
+    gap: var(--space-2);
     flex-shrink: 0;
 }
 
 .heatmap-week {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-2);
     flex-shrink: 0;
 }
 
 .heatmap-cell {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
+  width: var(--size-dot);
+  height: var(--size-dot);
+  border-radius: var(--radius-xs);
   background: var(--border);
-  transition: 0.15s;
+  transition: var(--duration-base);
 }
 
 .heatmap-cell:hover{
     transform:scale(1.3);
-    z-index:2;
+    z-index:var(--z-raised);
 }
 
 .heatmap-level-0 {
@@ -1469,7 +1581,7 @@ tbody tr:hover {
 
 .heatmap-level-4{
     background:var(--accent);
-    box-shadow:0 0 5px color-mix(in srgb,var(--accent) 55%,transparent);
+    box-shadow:0 0 var(--glow-blur) color-mix(in srgb,var(--accent) 55%,transparent);
 }
 
 .heatmap-future{
@@ -1477,8 +1589,8 @@ tbody tr:hover {
 }
 
 .heatmap-today{
-    outline:1px solid var(--text);
-    outline-offset:1px;
+    outline:var(--border-width) solid var(--text);
+    outline-offset:var(--space-2);
 }
 
 /* Hero account panel */
@@ -1490,16 +1602,16 @@ tbody tr:hover {
 .hero-panel-header {
   display: flex;
   align-items: baseline;
-  gap: 0.75rem;
-  padding: 1.1rem 1.25rem 0.85rem;
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-12);
+  padding: var(--space-16) var(--space-20) var(--space-14);
+  border-bottom: var(--border-width) solid var(--border);
 }
 .hero-panel-header h2 {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--font-md);
 }
 .hero-panel-subtitle {
-  font-size: 0.8rem;
+  font-size: var(--font-xs);
   color: var(--text-muted);
 }
 
@@ -1510,8 +1622,8 @@ tbody tr:hover {
 
 .hero-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 486px;
-  border-bottom: 1px solid var(--border);
+  grid-template-columns: minmax(0, 1fr) var(--hero-card-width);
+  border-bottom: var(--border-width) solid var(--border);
 }
 .hero-row:last-child {
   border-bottom: none;
@@ -1519,16 +1631,16 @@ tbody tr:hover {
 
 .hero-bar-cell {
   background: var(--surface-alt);
-  border-right: 1px solid var(--border);
-  padding: 0.85rem 1.25rem;
+  border-right: var(--border-width) solid var(--border);
+  padding: var(--space-14) var(--space-20);
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: var(--space-6);
   overflow-x: auto;
 }
 .hero-bar-cell .accum-track {
   flex: 1;
-  min-height: 38px;
+  min-height: var(--control-lg);
   overflow-y: hidden;
 }
 .hero-bar-cell .accum-track::before {
@@ -1536,7 +1648,7 @@ tbody tr:hover {
 }
 .hero-bar-cell .accum-bar {
   height: 100%;
-  min-height: 38px;
+  min-height: var(--control-lg);
 }
 
 .hero-acc-card {
@@ -1546,10 +1658,10 @@ tbody tr:hover {
     "points info actions"
     "streak streak streak";
   align-items: center;
-  column-gap: 0.85rem;
-  row-gap: 0.5rem;
-  padding: 0.9rem 1.1rem;
-  transition: background 0.12s ease;
+  column-gap: var(--space-14);
+  row-gap: var(--space-8);
+  padding: var(--space-14) var(--space-16);
+  transition: background var(--duration-fast) ease;
   min-width: 0;
 }
 .hero-acc-card:hover {
@@ -1563,28 +1675,28 @@ tbody tr:hover {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 108px;
-  min-height: 62px;
+  width: var(--hero-pts-width);
+  min-height: var(--chip-min-height);
   background: var(--surface-alt);
-  border-radius: 8px;
-  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-md);
+  padding: var(--space-8) var(--space-10);
   text-align: center;
 }
 
 .hero-pts-num {
-  font-size: 1.4rem;
+  font-size: var(--font-xl);
   font-weight: 800;
-  line-height: 1;
-  letter-spacing: -0.03em;
+  line-height: var(--leading-none);
+  letter-spacing: var(--tracking-tight);
   font-variant-numeric: tabular-nums;
   color: var(--text);
   white-space: nowrap;
 }
 .hero-pts-unit {
-  font-size: 0.69rem;
+  font-size: var(--font-2xs);
   font-weight: 600;
   color: var(--text-muted);
-  margin-top: 0.2rem;
+  margin-top: var(--space-4);
 }
 
 .hero-acc-info {
@@ -1593,12 +1705,12 @@ tbody tr:hover {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: var(--space-4);
 }
 
 .hero-acc-name {
   font-weight: 600;
-  font-size: 0.88rem;
+  font-size: var(--font-sm);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1607,7 +1719,7 @@ tbody tr:hover {
 .hero-acc-meta {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-6);
   flex-wrap: wrap;
   min-width: 0;
 }
@@ -1615,15 +1727,15 @@ tbody tr:hover {
 .hero-acc-today {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  font-size: 0.78rem;
+  gap: var(--space-4);
+  font-size: var(--font-xs);
   color: var(--text-muted);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .hero-acc-sub {
-  font-size: 0.74rem;
+  font-size: var(--font-2xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1640,9 +1752,9 @@ tbody tr:hover {
 
 .hero-acc-error,
 .hero-acc-warning {
-  font-size: 0.73rem;
+  font-size: var(--font-2xs);
   font-style: italic;
-  margin-top: 0.1rem;
+  margin-top: var(--space-2);
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -1651,9 +1763,9 @@ tbody tr:hover {
 }
 .hero-acc-completion {
   color: var(--positive);
-  font-size: 0.73rem;
+  font-size: var(--font-2xs);
   font-style: italic;
-  margin-top: 0.1rem;
+  margin-top: var(--space-2);
 }
 .hero-acc-warning {
   color: var(--amber);
@@ -1661,7 +1773,7 @@ tbody tr:hover {
 .hero-acc-warning a {
   color: inherit;
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: var(--space-2);
 }
 
 .hero-acc-actions {
@@ -1669,7 +1781,7 @@ tbody tr:hover {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: var(--space-4);
   min-width: max-content;
 }
 
@@ -1679,9 +1791,9 @@ tbody tr:hover {
 /* Account cards and status rail */
 .account-detail-panel {
   display: grid;
-  grid-template-columns: 1.75rem minmax(0, 1fr) max-content;
+  grid-template-columns: var(--rail-column-width) minmax(0, 1fr) max-content;
   column-gap: var(--space-account-columns);
-  row-gap: 0.65rem;
+  row-gap: var(--space-10);
   align-items: center;
 }
 .account-primary-row,
@@ -1709,11 +1821,11 @@ tbody tr:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.55rem;
-  height: 1.55rem;
-  flex: 0 0 1.55rem;
+  width: var(--size-badge);
+  height: var(--size-badge);
+  flex: 0 0 var(--size-badge);
   border-radius: 50%;
-  font-size: 0.9rem;
+  font-size: var(--font-sm);
 }
 .account-rail-icon.pill-success {
   background: var(--positive-bg);
@@ -1745,7 +1857,7 @@ tbody tr:hover {
 .account-detail-panel .panel-head h2 {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-8);
 }
 .account-detail-panel .panel-head h2 [class*="stat-icon-"] {
   flex-shrink: 0;
@@ -1763,12 +1875,12 @@ tbody tr:hover {
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 0.7rem;
-  line-height: 1;
-  padding: 0.15rem;
-  margin-right: 0.15rem;
+  font-size: var(--font-2xs);
+  line-height: var(--leading-none);
+  padding: var(--space-2);
+  margin-right: var(--space-2);
   cursor: pointer;
-  transition: transform 0.12s ease;
+  transition: transform var(--duration-fast) ease;
   flex-shrink: 0;
 }
 .acc-detail-toggle:hover {
@@ -1781,7 +1893,7 @@ tbody tr:hover {
 .acc-detail-actions {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--space-10);
   justify-self: end;
 }
 .acc-run-icon {
@@ -1790,7 +1902,7 @@ tbody tr:hover {
 .acc-delete-confirm {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-6);
 }
 
 /* Batch-run selector - mirrors run-progress-box's narrow panel treatment
@@ -1798,25 +1910,25 @@ tbody tr:hover {
    puts the title on the left and controls on the right, same as each
    account panel below it does with its own Run only button. */
 .batch-select-box {
-  padding: 0.65rem 1rem;
+  padding: var(--space-10) var(--space-16);
 }
 .batch-select-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
+  gap: var(--space-8) var(--space-12);
 }
 .batch-select-title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--font-base);
   font-weight: 700;
   color: var(--text);
 }
 .batch-select-controls {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--space-10);
   flex-wrap: wrap;
 }
 .accounts-run-selected-icon {
@@ -1825,28 +1937,28 @@ tbody tr:hover {
 
 .acc-detail-groups {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(var(--card-min-md), 1fr));
+  gap: var(--space-10);
 }
 .acc-detail-group {
   background: var(--surface-alt);
-  border-radius: 8px;
-  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius-md);
+  padding: var(--space-12) var(--space-14);
 }
 .acc-detail-group-title {
-  margin: 0 0 0.5rem;
-  font-size: 0.72rem;
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-2xs);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: var(--tracking-wide);
   color: var(--energy-high-accent);
 }
 .acc-detail-group .kv {
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 0.5rem 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(var(--card-min-xs), 1fr));
+  gap: var(--space-8) var(--space-12);
 }
 .acc-detail-group .kv dt {
-  font-size: 0.68rem;
+  font-size: var(--font-3xs);
 }
 .acc-detail-group .kv dd {
   font-weight: 600;
@@ -1856,7 +1968,7 @@ tbody tr:hover {
 #accountsContainer {
   display: flex;
   flex-direction: column;
-  gap: 1.1rem;
+  gap: var(--space-16);
 }
 
 .account-feature-details {
@@ -1865,7 +1977,7 @@ tbody tr:hover {
 .account-feature-details > summary {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-6);
   list-style: none;
   cursor: pointer;
   color: var(--text-muted);
@@ -1874,7 +1986,7 @@ tbody tr:hover {
   display: none;
 }
 .account-feature-caret {
-  transition: transform 0.12s ease;
+  transition: transform var(--duration-fast) ease;
 }
 .account-feature-details[open] > summary .account-feature-caret {
   transform: rotate(90deg);
@@ -1883,23 +1995,23 @@ tbody tr:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.45rem;
+  gap: var(--space-6);
+  margin-top: var(--space-8);
 }
 .acc-feature-actions {
   display: flex;
   align-items: center;
   justify-self: end;
-  gap: 0.4rem;
+  gap: var(--space-6);
 }
 /* Earnable / per-source chips */
 .point-source {
-  border: 1px solid var(--border);
+  border: var(--border-width) solid var(--border);
   background: var(--surface-alt);
   color: var(--text-muted);
-  border-radius: 999px;
-  padding: 0.15rem 0.45rem;
-  font-size: 0.72rem;
+  border-radius: var(--radius-pill);
+  padding: var(--space-2) var(--space-8);
+  font-size: var(--font-2xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   flex-shrink: 0;
@@ -1931,28 +2043,28 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 0.85rem;
+  gap: var(--space-8);
+  margin-bottom: var(--space-14);
 }
 
 .log-box {
   background: var(--canvas);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  height: 60vh;
-  min-height: 340px;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  height: var(--log-height);
+  min-height: var(--block-lg);
   overflow: auto;
-  padding: 0.5rem 0;
+  padding: var(--space-8) 0;
   font-family: var(--mono);
-  font-size: 0.78rem;
-  line-height: 1.6;
+  font-size: var(--font-xs);
+  line-height: var(--leading-relaxed);
 }
 
 .log-line {
   display: flex;
   align-items: flex-start;
-  gap: 0.7rem;
-  padding: 0.25rem 0.75rem;
+  gap: var(--space-12);
+  padding: var(--space-4) var(--space-12);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1971,16 +2083,16 @@ tbody tr:hover {
   flex-shrink: 0;
   opacity: 0.75;
   white-space: nowrap;
-  padding-top: 0.1rem;
+  padding-top: var(--space-2);
 }
 
 .log-level {
   flex-shrink: 0;
-  width: 3.4rem;
+  width: var(--log-level-width);
   font-weight: 700;
   text-transform: uppercase;
-  font-size: 0.68rem;
-  padding-top: 0.1rem;
+  font-size: var(--font-3xs);
+  padding-top: var(--space-2);
 }
 .log-level--info {
   color: var(--text-muted);
@@ -1998,23 +2110,23 @@ tbody tr:hover {
 
 .log-tag {
   flex-shrink: 0;
-  width: 11rem;
+  width: var(--log-tag-width);
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--accent);
   font-weight: 600;
   white-space: nowrap;
-  padding-top: 0.1rem;
+  padding-top: var(--space-2);
 }
 
 .log-account {
   flex-shrink: 0;
-  max-width: 11rem;
+  max-width: var(--log-tag-width);
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-muted);
   white-space: nowrap;
-  padding-top: 0.1rem;
+  padding-top: var(--space-2);
 }
 
 .log-msg {
@@ -2038,12 +2150,12 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.65rem;
-  padding: 0.5rem 0.15rem;
-  font-size: 0.85rem;
+  gap: var(--space-10);
+  padding: var(--space-8) var(--space-2);
+  font-size: var(--font-sm);
 }
 .runacc:not(:last-child) {
-  border-bottom: 1px dotted var(--border);
+  border-bottom: var(--border-width) dotted var(--border);
 }
 
 .runacc-email {
@@ -2058,7 +2170,7 @@ tbody tr:hover {
 .runacc-detail {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-  font-size: 0.8rem;
+  font-size: var(--font-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2067,7 +2179,7 @@ tbody tr:hover {
 }
 
 .exit-meta {
-  font-size: 0.8rem;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   margin-left: auto;
@@ -2079,24 +2191,24 @@ tbody tr:hover {
 
 .schedule-account-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 0.45rem;
+  grid-template-columns: repeat(auto-fit, minmax(var(--card-min-xl), 1fr));
+  gap: var(--space-8);
 }
 
 .preset-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: var(--space-6);
 }
 
 .chip-btn {
   appearance: none;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--font-xs);
   font-weight: 600;
-  padding: 0.3rem 0.6rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
+  padding: var(--space-4) var(--space-10);
+  border-radius: var(--radius-pill);
+  border: var(--border-width) solid var(--border);
   background: var(--surface-alt);
   color: var(--text-muted);
   cursor: pointer;
@@ -2108,8 +2220,8 @@ tbody tr:hover {
 }
 
 .sched-desc {
-  margin: -0.35rem 0 0;
-  font-size: 0.83rem;
+  margin: calc(var(--space-6) * -1) 0 0;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   min-height: 1.2em;
 }
@@ -2129,36 +2241,36 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem 1rem;
-  padding: 0.65rem 1rem;
+  gap: var(--space-12) var(--space-16);
+  padding: var(--space-10) var(--space-16);
 }
 .cfg-reveal-copy {
   display: flex;
   align-items: baseline;
   flex: 1 1 auto;
   flex-wrap: wrap;
-  gap: 0.1rem 0.8rem;
+  gap: var(--space-2) var(--space-12);
   min-width: 0;
 }
 .cfg-reveal-title {
   flex: 0 0 auto;
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--font-base);
   font-weight: 700;
   color: var(--text);
 }
 .cfg-reveal-help {
-  flex: 1 1 18rem;
+  flex: 1 1 var(--reveal-help-basis);
   margin: 0;
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: var(--font-xs);
 }
 .cfg-reveal-toggle {
   position: relative;
   flex: 0 0 auto;
   display: inline-block;
-  width: 2.65rem;
-  height: 1.5rem;
+  width: var(--toggle-width);
+  height: var(--size-badge);
   cursor: pointer;
 }
 .cfg-reveal-toggle input {
@@ -2175,44 +2287,44 @@ tbody tr:hover {
 .cfg-reveal-track {
   position: absolute;
   inset: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-pill);
   background: var(--border);
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background var(--duration-base) ease, border-color var(--duration-base) ease;
 }
 .cfg-reveal-track::before {
   content: "";
   position: absolute;
   top: 50%;
-  left: 1px;
-  width: 1.25rem;
-  height: 1.25rem;
-  border: 1px solid var(--border-strong);
+  left: var(--space-2);
+  width: var(--size-knob);
+  height: var(--size-knob);
+  border: var(--border-width) solid var(--border-strong);
   border-radius: 50%;
   background: var(--surface);
   transform: translateY(-50%);
-  transition: transform 0.15s ease;
+  transition: transform var(--duration-base) ease;
 }
 .cfg-reveal-toggle input:checked + .cfg-reveal-track {
   border-color: var(--accent);
   background: var(--accent);
 }
 .cfg-reveal-toggle input:checked + .cfg-reveal-track::before {
-  transform: translate(1.15rem, -50%);
+  transform: translate(calc(var(--toggle-width) - var(--size-knob) - var(--space-4)), -50%);
 }
 .cfg-reveal-toggle input:focus-visible + .cfg-reveal-track {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline: var(--border-width-strong) solid var(--focus);
+  outline-offset: var(--space-2);
 }
 .cfg-version-tag {
   display: inline-flex;
   align-items: center;
-  margin-left: 0.4rem;
-  padding: 0.05rem 0.35rem;
-  border-radius: 4px;
+  margin-left: var(--space-6);
+  padding: var(--space-2) var(--space-6);
+  border-radius: var(--radius-sm);
   background: var(--accent-subtle);
   color: var(--accent);
-  font-size: 0.65rem;
+  font-size: var(--font-3xs);
   font-weight: 700;
   white-space: nowrap;
   vertical-align: middle;
@@ -2228,7 +2340,7 @@ tbody tr:hover {
 .cfg-toggle-groups {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-12);
 }
 
 /* Reuses accounts.js's .acc-detail-group card + .acc-detail-group-title
@@ -2239,23 +2351,23 @@ tbody tr:hover {
 
 .switch-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 0.5rem;
-  margin-bottom: 0.6rem;
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min-lg), 1fr));
+  gap: var(--space-8);
+  margin-bottom: var(--space-10);
 }
 
 .switch {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-columns: var(--size-icon) minmax(0, 1fr);
   align-items: center;
-  column-gap: 0.55rem;
-  row-gap: 0.25rem;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  column-gap: var(--space-8);
+  row-gap: var(--space-4);
+  padding: var(--space-8) var(--space-12);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--surface);
   cursor: default;
-  font-size: 0.83rem;
+  font-size: var(--font-xs);
 }
 .switch:hover {
   background: var(--hover);
@@ -2264,8 +2376,8 @@ tbody tr:hover {
   grid-column: 1;
   grid-row: 1;
   accent-color: var(--accent);
-  width: 16px;
-  height: 16px;
+  width: var(--size-icon);
+  height: var(--size-icon);
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -2273,7 +2385,7 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-8);
   min-width: 0;
   width: 100%;
   padding: 0;
@@ -2304,12 +2416,12 @@ tbody tr:hover {
   min-width: 0;
   overflow-wrap: anywhere;
   font-weight: 600;
-  border-bottom: 1px dotted var(--text-muted);
+  border-bottom: var(--border-width) dotted var(--text-muted);
 }
 .cfg-help-description {
   margin: 0;
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: var(--font-2xs);
   line-height: 1.4;
 }
 
@@ -2319,20 +2431,20 @@ tbody tr:hover {
    grid/tag-chip/lock pieces below are new. */
 .field-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 0.7rem 0.85rem;
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min-xl), 1fr));
+  gap: var(--space-12) var(--space-14);
   align-items: start;
 }
 .field-item {
   min-width: 0;
 }
 .field-hint {
-  font-size: 0.72rem;
+  font-size: var(--font-2xs);
   font-weight: 400;
   color: var(--text-muted);
 }
 .field-locked {
-  font-size: 0.72rem;
+  font-size: var(--font-2xs);
   font-weight: 400;
   color: var(--text-muted);
 }
@@ -2350,8 +2462,8 @@ tbody tr:hover {
 .tag-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  min-height: 1.6rem;
+  gap: var(--space-6);
+  min-height: var(--space-24);
 }
 .tag-empty {
   font-weight: 400;
@@ -2360,18 +2472,18 @@ tbody tr:hover {
 .tag-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.2rem 0.3rem 0.2rem 0.55rem;
-  border-radius: 999px;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-8);
+  border-radius: var(--radius-pill);
   background: var(--surface);
-  border: 1px solid var(--border);
-  font-size: 0.78rem;
+  border: var(--border-width) solid var(--border);
+  font-size: var(--font-xs);
   font-weight: 400;
   color: var(--text);
 }
 .tag-chip--mono .tag-chip-text {
   font-family: var(--mono);
-  font-size: 0.76rem;
+  font-size: var(--font-2xs);
 }
 .tag-chip-remove {
   appearance: none;
@@ -2379,10 +2491,10 @@ tbody tr:hover {
   background: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.9rem;
-  line-height: 1;
-  padding: 0.1rem 0.2rem;
-  border-radius: 999px;
+  font-size: var(--font-sm);
+  line-height: var(--leading-none);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
 }
 .tag-chip-remove:hover {
   color: var(--text);
@@ -2390,28 +2502,28 @@ tbody tr:hover {
 }
 .tag-add {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-6);
 }
 .tag-add-input {
   flex: 1 1 auto;
 }
 
 .cfg-tip {
-  margin-bottom: 0.6rem;
+  margin-bottom: var(--space-10);
 }
 
 .editor {
   font-family: var(--mono);
-  font-size: 0.82rem;
-  line-height: 1.55;
+  font-size: var(--font-xs);
+  line-height: var(--leading-relaxed);
   width: 100%;
-  min-height: 340px;
+  min-height: var(--block-lg);
   resize: vertical;
   color: var(--text);
   background: var(--canvas);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.75rem;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-12);
   tab-size: 2;
 }
 
@@ -2426,9 +2538,9 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.7rem 0.25rem;
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-4);
+  border-bottom: var(--border-width) solid var(--border);
 }
 .session-card:last-child {
   border-bottom: none;
@@ -2436,22 +2548,22 @@ tbody tr:hover {
 .session-card-info {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: var(--space-2);
   min-width: 0;
 }
 .session-card-email {
-  font-size: 0.9rem;
+  font-size: var(--font-sm);
   font-weight: 600;
 }
 .session-card-meta {
-  font-size: 0.8rem;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .diag-name {
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2460,15 +2572,15 @@ tbody tr:hover {
 
 .diag-badges {
   display: flex;
-  gap: 0.25rem;
+  gap: var(--space-4);
   margin-left: auto;
   flex-shrink: 0;
 }
 
 .diag-preview {
-  margin: 0 0 0.7rem;
-  padding: 0 0.25rem;
-  font-size: 0.78rem;
+  margin: 0 0 var(--space-12);
+  padding: 0 var(--space-4);
+  font-size: var(--font-xs);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2476,31 +2588,31 @@ tbody tr:hover {
 }
 
 .diag-body {
-  padding: 0.35rem 0.25rem 1rem;
+  padding: var(--space-6) var(--space-4) var(--space-16);
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: var(--space-14);
 }
 
 .diag-pre {
   margin: 0;
-  max-height: 260px;
+  max-height: var(--block-md);
   overflow: auto;
   background: var(--surface-alt);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.75rem;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-12);
   font-family: var(--mono);
-  font-size: 0.76rem;
-  line-height: 1.55;
+  font-size: var(--font-2xs);
+  line-height: var(--leading-relaxed);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .diag-shot {
   display: block;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--surface-alt);
 }
@@ -2534,6 +2646,7 @@ tbody tr:hover {
       --positive: #87a07a;
       --negative: #c45858;
       --warning: #D7A32E;
+      --energy-high-bg: #211a34;
       --energy-high-accent: #7d5aa9;
       --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     }
@@ -2553,30 +2666,27 @@ tbody tr:hover {
 /* Touch input target sizing (shared buttons) */
 @media (pointer: coarse) {
   .link-btn {
-      padding: 0.5rem 0.9rem;
+      padding: var(--space-8) var(--space-14);
     }
 
   .btn {
-      height: 38px;
-    }
-  .btn-small {
-      height: 30px;
+      height: var(--control-lg);
     }
 }
 
 /* Panel & table density (shared) */
 @media (max-width: 768px) {
   .panel {
-      padding: 0.85rem;
+      padding: var(--space-14);
     }
   .panel h2 {
-      font-size: 0.9rem;
+      font-size: var(--font-sm);
     }
 
   th,
     td {
-      padding: 0.5rem;
-      font-size: 0.82rem;
+      padding: var(--space-8);
+      font-size: var(--font-xs);
     }
 }
 
@@ -2602,8 +2712,8 @@ tbody tr:hover {
   .topbar {
       flex-direction: column;
       align-items: flex-start;
-      gap: 10px;
-      padding: 0.85rem 1rem;
+      gap: var(--space-10);
+      padding: var(--space-14) var(--space-16);
     }
   .topbar h1 {
       margin: 0;
@@ -2615,40 +2725,38 @@ tbody tr:hover {
       flex-direction: row;
       justify-content: space-between;
       align-items: center;
-      gap: 12px;
     }
   .controls-group {
       justify-content: flex-start;
-      gap: 8px;
+      gap: var(--space-8);
       flex-grow: 1;
     }
   .tabbar {
       position: static;
     }
   .tabbar-inner {
-      padding: 0 1rem;
+      padding: 0 var(--space-16);
     }
   .tab {
-      padding: 0.65rem 0.7rem;
-      font-size: 0.84rem;
+      padding: var(--space-10) var(--space-12);
     }
 
   .control-strip {
-      padding: 0.85rem 1rem 0;
+      padding: var(--space-14) var(--space-16) 0;
       align-items: stretch;
       flex-direction: column;
-      gap: 0.6rem;
+      gap: var(--space-10);
     }
   .ctl-actions {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr)) 38px;
-      gap: 0.4rem;
+      grid-template-columns: repeat(3, minmax(0, 1fr)) var(--control-lg);
+      gap: var(--space-6);
       width: 100%;
     }
   .ctl-actions .btn {
       min-width: 0;
-      padding: 0 0.5rem;
-      font-size: 0.8rem;
+      padding: 0 var(--space-8);
+      font-size: var(--font-xs);
       overflow: hidden;
       text-overflow: ellipsis;
     }
@@ -2658,26 +2766,26 @@ tbody tr:hover {
     }
 
   main {
-      padding: 1rem;
-      gap: 1.1rem;
+      padding: var(--space-16);
+      gap: var(--space-16);
     }
   .tab-panel {
-      gap: 1.1rem;
+      gap: var(--space-16);
     }
 }
 
 /* Touch input target sizing (topbar controls, login codes) */
 @media (pointer: coarse) {
   .controls-group .icon-btn {
-      height: 38px;
-      width: 38px;
+      height: var(--control-lg);
+      width: var(--control-lg);
     }
   .theme-select {
-      min-height: 38px;
+      min-height: var(--control-lg);
     }
 
   .login-code-card {
-      min-height: 44px;
+      min-height: var(--control-xl);
     }
 }
 
@@ -2691,20 +2799,12 @@ tbody tr:hover {
     }
 }
 
-/* Login approval alerts (very small phones) */
-@media (max-width: 420px) {
-  .login-code-number {
-      font-size: 2rem;
-    }
-}
-
-
 /* Overview */
 
 /* Stat cards (tablet) */
 @media (max-width: 1024px) {
   .stat-grid {
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(var(--card-min-sm), 1fr));
     }
 }
 
@@ -2730,29 +2830,26 @@ tbody tr:hover {
 
   .ticker.is-ticker {
     text-overflow: clip;
-    mask-image: linear-gradient(to right, transparent, black 14px, black calc(100% - 14px), transparent);
-    -webkit-mask-image: linear-gradient(to right, transparent, black 14px, black calc(100% - 14px), transparent);
+    mask-image: linear-gradient(to right, transparent, black var(--space-14), black calc(100% - var(--space-14)), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black var(--space-14), black calc(100% - var(--space-14)), transparent);
   }
 
   .ticker.is-ticker .ticker-track-wrap {
-    animation: ticker-scroll var(--ticker-duration, 14s) linear infinite;
+    animation: ticker-scroll var(--ticker-duration) linear infinite;
   }
 }
 
 /* Run progress bar (mobile) */
 @media (max-width: 768px) {
-  .run-progress-meta {
-    font-size: 0.78rem;
-  }
   .run-progress-box {
-    padding: 0.55rem 0.85rem;
+    padding: var(--space-8) var(--space-14);
   }
 }
 
 /* Hero panel, stat cards, accumulation bars, run rows (mobile) */
 @media (max-width: 768px) {
   .hero-panel-header {
-      padding: 0.85rem 0.85rem 0.65rem;
+      padding: var(--space-14) var(--space-14) var(--space-10);
     }
   .hero-panel {
       padding: 0;
@@ -2761,19 +2858,19 @@ tbody tr:hover {
   .stat-grid {
       display: flex;
       flex-direction: column;
-      gap: 0.35rem;
+      gap: var(--space-6);
     }
   .stat-card {
-      padding: 0.45rem 0.65rem;
-      border-radius: 8px;
+      padding: var(--space-8) var(--space-10);
+      border-radius: var(--radius-md);
       box-shadow: none;
       flex-direction: row-reverse;
       justify-content: space-between;
       align-items: center;
       text-align: left;
-      border: 1px dashed var(--border);
+      border: var(--border-width) dashed var(--border);
       min-height: 0;
-      gap: 0.5rem;
+      gap: var(--space-8);
     }
   .stat-block-chip {
       background: transparent;
@@ -2782,14 +2879,14 @@ tbody tr:hover {
       width: auto;
       flex-direction: row;
       align-items: center;
-      gap: 0.25rem;
+      gap: var(--space-4);
       justify-content: flex-end;
       text-align: right;
     }
   .stat-num-val,
   .stat-value-sm,
   .stat-num-val.stat-value-sm {
-      font-size: 0.78rem !important;
+      font-size: var(--font-xs) !important;
       font-weight: 700;
       white-space: normal !important;
       overflow: visible !important;
@@ -2802,7 +2899,7 @@ tbody tr:hover {
       display: none;
     }
   .stat-label {
-      font-size: 0.78rem !important;
+      font-size: var(--font-xs) !important;
       word-break: keep-all;
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
@@ -2815,11 +2912,11 @@ tbody tr:hover {
       display: none;
     }
   .hero-acc-pts {
-      width: 84px;
-      min-height: 50px;
+      width: var(--hero-pts-width-sm);
+      min-height: var(--chip-min-height-sm);
     }
   .hero-pts-num {
-      font-size: 1.1rem;
+      font-size: var(--font-lg);
     }
   .hero-acc-card {
       grid-template-columns: auto minmax(0, 1fr);
@@ -2827,19 +2924,19 @@ tbody tr:hover {
         "points info"
         "streak streak"
         "actions actions";
-      padding: 0.7rem 0.85rem;
-      column-gap: 0.65rem;
-      row-gap: 0.5rem;
+      padding: var(--space-12) var(--space-14);
+      column-gap: var(--space-10);
+      row-gap: var(--space-8);
     }
   .hero-acc-name {
-      font-size: 0.82rem;
+      font-size: var(--font-xs);
     }
   .hero-acc-actions {
       flex-direction: row;
       flex-wrap: wrap;
     }
   .hero-acc-actions .link-btn {
-      flex: 1 1 5rem;
+      flex: 1 1 var(--action-min-width);
       min-width: 0;
     }
 }
@@ -2847,26 +2944,22 @@ tbody tr:hover {
 /* Hero points column (tablet) */
 @media (min-width: 769px) and (max-width: 1024px) {
   .hero-acc-pts {
-      width: 96px;
+      width: var(--hero-pts-width-md);
     }
   .hero-acc-card {
-      gap: 0.7rem;
-      padding: 0.85rem 0.9rem;
+      gap: var(--space-12);
+      padding: var(--space-14) var(--space-14);
     }
 }
 
 /* Hero points column (very small phones) */
 @media (max-width: 420px) {
-  .hero-acc-pts {
-      width: 74px;
-      min-height: 46px;
-    }
   .hero-pts-num {
-      font-size: 1rem;
+      font-size: var(--font-md);
     }
   .hero-acc-card {
-      padding: 0.6rem;
-      gap: 0.55rem;
+      padding: var(--space-10);
+      gap: var(--space-8);
     }
 }
 
@@ -2876,26 +2969,26 @@ tbody tr:hover {
 /* Compact account controls and run-only actions on mobile. */
 @media (max-width: 768px) {
   .account-detail-panel {
-    --space-account-columns: 0.5rem;
+    --space-account-columns: var(--space-8);
   }
   .batch-select-header {
     flex-wrap: nowrap;
-    gap: 0.4rem 0.6rem;
+    gap: var(--space-6) var(--space-10);
   }
   .accounts-selected-label,
   .accounts-run-selected-label {
     display: none;
   }
   .batch-select-controls {
-    gap: 0.4rem;
+    gap: var(--space-6);
     flex-wrap: nowrap;
   }
   #accountsSelectedCount {
     white-space: nowrap;
   }
   .accounts-run-selected {
-    width: 34px;
-    flex: 0 0 34px;
+    width: var(--control-md);
+    flex: 0 0 var(--control-md);
     padding: 0;
   }
   .accounts-run-selected-icon {
@@ -2907,7 +3000,7 @@ tbody tr:hover {
     display: none;
   }
   .acc-run-button {
-    width: 34px;
+    width: var(--control-md);
     padding: 0;
   }
   .acc-run-button .acc-run-icon {
@@ -2921,17 +3014,16 @@ tbody tr:hover {
 /* Log box / toolbar (mobile) */
 @media (max-width: 768px) {
   .log-box {
-      height: 55vh;
-      font-size: 0.72rem;
+      font-size: var(--font-2xs);
     }
   .log-tag {
-      width: 5.5rem;
+      width: var(--log-tag-width-sm);
     }
   .log-account {
-      max-width: 7rem;
+      max-width: var(--log-account-max-sm);
     }
   .toolbar {
-      gap: 0.4rem;
+      gap: var(--space-6);
     }
 }
 
@@ -2942,7 +3034,7 @@ tbody tr:hover {
     }
   .log-line {
       flex-wrap: wrap;
-      row-gap: 0.15rem;
+      row-gap: var(--space-2);
     }
   .log-msg {
       flex-basis: 100%;
@@ -2969,10 +3061,10 @@ tbody tr:hover {
     align-items: flex-start;
   }
   .cfg-reveal-copy {
-    gap: 0.1rem 0.5rem;
+    gap: var(--space-2) var(--space-8);
   }
   .cfg-reveal-toggle {
-    margin-top: 0.1rem;
+    margin-top: var(--space-2);
   }
   .switch-grid {
       grid-template-columns: 1fr;
