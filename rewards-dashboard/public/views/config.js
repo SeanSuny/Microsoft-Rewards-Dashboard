@@ -338,6 +338,21 @@ const FIELD_GROUPS = [
           placeholder: "3min",
         },
       },
+      taskDelay: {
+        kind: "delay",
+        label: "Delay between tasks",
+        v5Only: true,
+        min: {
+          path: "taskDelay.min",
+          desc: "Minimum delay before starting the next task on the same platform",
+          placeholder: "15sec",
+        },
+        max: {
+          path: "taskDelay.max",
+          desc: "Maximum delay before starting the next task on the same platform",
+          placeholder: "30sec",
+        },
+      },
     },
   },
   {
@@ -350,6 +365,15 @@ const FIELD_GROUPS = [
         min: 0,
         step: 1,
         placeholder: "110",
+      },
+      "searchSettings.maxSearchOnBingAttempts": {
+        kind: "number",
+        label: "Max Explore on Bing attempts",
+        desc: "Max unused search queries tried per Explore on Bing offer",
+        min: 1,
+        step: 1,
+        placeholder: "3",
+        v5Only: true,
       },
       "searchSettings.searchResultVisitTime": {
         kind: "text",
@@ -810,14 +834,15 @@ function tagsFieldHtml(path, def) {
         </div>`;
 }
 
-function delaySubFieldHtml(groupLabel, subLabel, sub) {
+function delaySubFieldHtml(groupLabel, subLabel, sub, def = null) {
   const value = getDeep(loaded, sub.path);
   const inputId = `cfg-input-${sub.path.replace(/[^a-zA-Z0-9]/g, "-")}`;
   const label = `${groupLabel} \u2014 ${subLabel}`;
+  const disabled = isVersionDisabled(def);
   return `
         <div class="field field-item">
-            ${settingHelpHtml(sub.path, label, sub.desc)}
-            <input id="${inputId}" class="input" type="text" data-path="${U.escapeAttr(sub.path)}" aria-label="${U.escapeAttr(label)}"
+            ${settingHelpHtml(sub.path, label, sub.desc, def)}
+            <input id="${inputId}" class="input" type="text" data-path="${U.escapeAttr(sub.path)}" aria-label="${U.escapeAttr(label)}" ${disabled ? "disabled" : ""}
                 value="${U.escapeAttr(value ?? "")}" placeholder="${U.escapeAttr(sub.placeholder || "")}">
         </div>`;
 }
@@ -833,8 +858,8 @@ function fieldHtml(path, def) {
       return tagsFieldHtml(path, def);
     case "delay":
       return (
-        delaySubFieldHtml(def.label, "min", def.min) +
-        delaySubFieldHtml(def.label, "max", def.max)
+        delaySubFieldHtml(def.label, "min", def.min, def) +
+        delaySubFieldHtml(def.label, "max", def.max, def)
       );
     default:
       return "";
