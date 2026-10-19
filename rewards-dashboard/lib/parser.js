@@ -9,9 +9,10 @@ const DOCKER_TS_RE = /^(\S+)\s([\s\S]*)$/;
 const APP_LINE_RE =
   /^\[([^\]]+)\]\s\[([^\]]+)\]\s\[([^\]]+)\]\s(\S+)\s\[([^\]]+)\]\s([\s\S]*)$/;
 
-const ACCOUNT_START_RE = /^Starting account:\s(\S+)\s\|\sgeoLocale:\s(.*)$/;
+const ACCOUNT_START_RE =
+  /^Starting account:\s(\S+)\s\|\sgeoLocale:\s([^|]*?)\s*(?:\|.*)?$/;
 const ACCOUNT_END_RE =
-  /^(?:Completed|Finished) account:\s(\S+)\s\|\spointsGained=(-?\d+(?:\.\d+)?|unknown)\s\|\spreviousBalance=(\d+(?:\.\d+)?)\s\|\scurrentBalance=(\d+(?:\.\d+)?)\s\|\sdurationSeconds=([\d.]+)(?:\s\|\sstatus=(\S+))?(?:\s\|\sreason=([\s\S]*))?$/;
+  /^(?:Completed|Finished) account:\s(\S+)\s\|\spointsGained=(-?\d+(?:\.\d+)?|unknown)\s\|\spreviousBalance=(\d+(?:\.\d+)?)\s\|\scurrentBalance=(\d+(?:\.\d+)?)\s\|\sdurationSeconds=([\d.]+)(?:\s\|\sstatus=(\S+))?(?:\s\|\sreason=("(?:[^"\\]|\\.)*"|[\s\S]*?))?(?:\s\|\sactivities:\s[\s\S]*)?$/;
 const ACCOUNT_ERR_RE = /^(\S+@\S+):\s([\s\S]*)$/;
 
 // src/index.ts's per-account flow wrapper (Mobile.ts / Desktop.ts) logs this
@@ -35,7 +36,7 @@ const RUN_END_RE =
 // one at a time now rather than together, so this wait can be a large
 // fraction of the run's total time.
 const ACCOUNT_DELAY_RE =
-  /^Waiting\s([\d.]+)\sseconds before starting the next account(?:\s\((\S+@\S+)\))?$/;
+  /^Waiting\s([\d.]+)\sseconds before starting the next account(?:\s\((\S+@\S+)\))?(?:\s\|\swaitMs=\d+)?$/;
 // v5 logs streakProtectionEnabled=null when the protection state couldn't be
 // read, so "null" is a valid value alongside true/false.
 const STREAK_PROTECTION_RE =
