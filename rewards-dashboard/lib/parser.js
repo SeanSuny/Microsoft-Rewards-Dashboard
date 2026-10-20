@@ -12,8 +12,37 @@ const APP_LINE_RE =
 const ACCOUNT_START_RE =
   /^Starting account:\s(\S+)\s\|\sgeoLocale:\s([^|]*?)\s*(?:\|.*)?$/;
 const ACCOUNT_END_RE =
-  /^(?:Completed|Finished) account:\s(\S+)\s\|\spointsGained=(-?\d+(?:\.\d+)?|unknown)\s\|\spreviousBalance=(\d+(?:\.\d+)?)\s\|\scurrentBalance=(\d+(?:\.\d+)?)\s\|\sdurationSeconds=([\d.]+)(?:\s\|\sstatus=(\S+))?(?:\s\|\sreason=("(?:[^"\\]|\\.)*"|[\s\S]*?))?(?:\s\|\sactivities:\s[\s\S]*)?$/;
+  /^(?:Completed|Finished) account:\s(\S+)\s\|\spointsGained=(-?\d+(?:\.\d+)?|unknown)\s\|\spreviousBalance=(\d+(?:\.\d+)?)\s\|\scurrentBalance=(\d+(?:\.\d+)?)\s\|\sdurationSeconds=([\d.]+)(?:\s\|\sstatus=(\S+))?(?:\s\|\sreason=("(?:[^"\\]|\\.)*"|[\s\S]*?))?(?:\s\|\sactivities:\s([\s\S]*))?$/;
 const ACCOUNT_ERR_RE = /^(\S+@\S+):\s([\s\S]*)$/;
+
+// "<activity> | <state> | points earned: <n|unverified>[ | <detail>]"
+const ACTIVITY_RESULT_RE =
+  /^(.+?)\s\|\s([^|]+?)\s\|\spoints earned:\s(-?\d+(?:\.\d+)?|unverified)(?:\s\|\s([\s\S]*))?$/;
+const ACTIVITY_PROMOTION_RE = /^(.+?):\s*["“](.+)["”]$/;
+// ACCOUNT-END tail, e.g. "8 completed, 6 incomplete, 2 unavailable, 3 not applicable"
+const ACTIVITY_COUNT_RE = /(\d+)\s(completed|incomplete|unavailable|not applicable)/g;
+
+function parseActivityCounts(raw) {
+  if (!raw) return null;
+  const keys = {
+    completed: "completed",
+    incomplete: "incomplete",
+    unavailable: "unavailable",
+    "not applicable": "notApplicable",
+  };
+  const counts = {};
+  for (const m of raw.matchAll(ACTIVITY_COUNT_RE)) counts[keys[m[2]]] = Number(m[1]);
+  return Object.keys(counts).length ? counts : null;
+}
+
+function activityStatus(state) {
+  if (/^completed|request sent/i.test(state)) return "completed";
+  if (/unavailable/i.test(state)) return "unavailable";
+  if (/not applicable/i.test(state)) return "notApplicable";
+  if (/failed/i.test(state)) return "failed";
+  if (/skipped/i.test(state)) return "skipped";
+  return "unconfirmed";
+}
 
 // src/index.ts's per-account flow wrapper (Mobile.ts / Desktop.ts) logs this
 // under title FLOW at ERROR level when an account's automation throws -
@@ -68,7 +97,13 @@ const WRAPPER_SLEEP_RE = /^Sleeping for [^(]*\((\d+)\sseconds?\)$/;
 const WRAPPER_STARTING_RE = /^Starting script\.\.\.$/;
 // src/control-api/trigger.js, when skipIfRunning is on and /start returns 409.
 const TRIGGER_SKIPPED_RE =
-  /^\[trigger\]\sA run is already in progress\.\sSkipping as configured\.$/;
+  /^(?:\[trigger\]\s)?A run is already in progress\.\sSkipping as configured\.$/;
+
+// "[POINTS] Earnable today | Mobile: unknown | Browser: 60 | App: pending mobile sign-in | <email> | locale: en-CA"
+const EARNABLE_RE =
+  /^Earnable today\s\|\sMobile:\s([^|]+?)\s\|\sBrowser:\s([^|]+?)\s\|\sApp:\s([^|]+?)\s\|\s(\S+@\S+)\s/;
+const APP_POINTS_RE = /^App points available:\s*(\d+)$/;
+const numberOrNull = (v) => (/^\d+$/.test(v.trim()) ? Number(v) : null);
 // "Script finished" is printed right before the wrapper's natural exit
 // (which is what triggers the EXIT trap that logs "Lock released"). Kept as
 // its own event kind (see store.js) rather than folded into "Lock released",
@@ -211,9 +246,26 @@ function parseLine(rawLine) {
           // ever logged for a successful account.
           accountStatus: am[6] || "completed",
           error: decodeReason(am[7]),
+          activityCounts: parseActivityCounts(am[8]),
         };
       }
       break;
+    }
+    case "ACTIVITY-RESULT": {
+      const am = ACTIVITY_RESULT_RE.exec(message);
+      if (!am || !base.accountName) break;
+      const name = am[1].replace(/\u200b/g, "").trim();
+      const promo = ACTIVITY_PROMOTION_RE.exec(name);
+      return {
+        ...base,
+        kind: "activity-result",
+        email: base.accountName,
+        activity: promo ? promo[1].trim() : name,
+        title: promo ? promo[2].trim() : "",
+        activityStatus: activityStatus(am[2]),
+        pointsGained: am[3] === "unverified" ? null : Number(am[3]),
+        reason: am[4] ? am[4].trim() : null,
+      };
     }
     case "ACCOUNT-ERROR": {
       const am = ACCOUNT_ERR_RE.exec(message);
@@ -325,6 +377,34 @@ function parseLine(rawLine) {
       }
       break;
     }
+    case "POINTS": {
+      const em = EARNABLE_RE.exec(message);
+      if (em && base.accountName) {
+        return {
+          ...base,
+          kind: "earnable",
+          email: base.accountName,
+          mobile: numberOrNull(em[1]),
+          browser: numberOrNull(em[2]),
+          app: numberOrNull(em[3]),
+        };
+      }
+      const ap = APP_POINTS_RE.exec(message);
+      if (ap && base.accountName) {
+        return { ...base, kind: "earnable", email: base.accountName, app: Number(ap[1]) };
+      }
+      break;
+    }
+    // v5b3 logs the wrapper's own lifecycle in the app format.
+    case "RUN_DAILY.SH": {
+      const ev = wrapperMessageEvent(dockerTs, message, clean);
+      if (ev) return ev;
+      break;
+    }
+    case "TRIGGER": {
+      if (TRIGGER_SKIPPED_RE.test(message)) return wrapperSkippedEvent(dockerTs, clean);
+      break;
+    }
     case "CLUSTER-WORKER-EXIT": {
       const wm = CLUSTER_WORKER_EXIT_RE.exec(message);
       if (wm) {
@@ -359,24 +439,30 @@ function parseLine(rawLine) {
  * Returns null for lines that don't match at all, or a 'generic' event for
  * wrapper lines that aren't one of the specific lifecycle events we track.
  */
+function wrapperSkippedEvent(dockerTs, clean) {
+  return {
+    ts: dockerTs,
+    userName: "run_daily.sh",
+    level: "warn",
+    platform: "MAIN",
+    title: "WRAPPER",
+    message: "Scheduled run skipped: a run was already in progress",
+    raw: clean,
+    kind: "wrapper-run-skipped",
+  };
+}
+
 function parseWrapperLine(dockerTs, clean) {
   if (TRIGGER_SKIPPED_RE.test(clean.trim())) {
-    return {
-      ts: dockerTs,
-      userName: "run_daily.sh",
-      level: "warn",
-      platform: "MAIN",
-      title: "WRAPPER",
-      message: "Scheduled run skipped: a run was already in progress",
-      raw: clean,
-      kind: "wrapper-run-skipped",
-    };
+    return wrapperSkippedEvent(dockerTs, clean);
   }
 
   const wm = WRAPPER_LINE_RE.exec(clean);
   if (!wm) return null;
-  const message = wm[1];
+  return wrapperMessageEvent(dockerTs, wm[1], clean);
+}
 
+function wrapperMessageEvent(dockerTs, message, clean) {
   const base = {
     ts: dockerTs,
     userName: "run_daily.sh",

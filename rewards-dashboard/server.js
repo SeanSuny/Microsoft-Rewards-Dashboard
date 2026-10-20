@@ -540,7 +540,12 @@ async function handleApi(req, res, url) {
     const histories =
       effectiveHistoryDays > 0 ? store.allAccountHistories({ since }) : {};
     return sendJson(res, 200, {
-      accounts: mergeAccounts(apiAccounts, store.snapshotAccounts(), histories),
+      accounts: mergeAccounts(
+        apiAccounts,
+        store.snapshotAccounts(),
+        histories,
+        store.accountActivities(),
+      ),
       histories,
       historyDays: effectiveHistoryDays,
       apiError,
