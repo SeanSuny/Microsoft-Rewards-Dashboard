@@ -92,6 +92,13 @@ const RUN_NO_ACTIVITY_STALE_MS = 90 * 60 * 1000;
 // log lines at all to trigger a check from apply().
 const ZERO_START_WATCHDOG_INTERVAL_MS = 60 * 1000;
 
+// Rewards reset on the local calendar day (the container's TZ).
+function startOfLocalDay(ts) {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
@@ -113,7 +120,22 @@ CREATE TABLE IF NOT EXISTS accounts (
     streak_protection_enabled INTEGER,
     streak_protection_remaining_days INTEGER,
     streak_counter INTEGER,
-    streak_protection_updated_at TEXT
+    streak_protection_updated_at TEXT,
+    last_activity_counts TEXT,
+    last_earnable TEXT
+) STRICT;
+
+-- Today's per-activity results (from ACTIVITY-RESULT log lines); rewards reset daily.
+CREATE TABLE IF NOT EXISTS account_activities (
+    email TEXT NOT NULL,
+    activity TEXT NOT NULL,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL,
+    points_gained REAL,
+    reason TEXT,
+    ts TEXT NOT NULL,
+    run_start TEXT,
+    PRIMARY KEY (email, activity, title)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS account_history (
@@ -241,11 +263,22 @@ class Store {
       ["streak_protection_remaining_days", "INTEGER"],
       ["streak_counter", "INTEGER"],
       ["streak_protection_updated_at", "TEXT"],
+      ["last_activity_counts", "TEXT"],
+      ["last_earnable", "TEXT"],
     ];
     for (const [name, type] of accountMigrations) {
       if (!accountCols.has(name))
         this.db.exec(`ALTER TABLE accounts ADD COLUMN ${name} ${type}`);
     }
+
+    const activityCols = new Set(
+      this.db
+        .prepare("PRAGMA table_info(account_activities)")
+        .all()
+        .map((c) => c.name),
+    );
+    if (!activityCols.has("run_start"))
+      this.db.exec("ALTER TABLE account_activities ADD COLUMN run_start TEXT");
   }
 
   _prepare() {
@@ -263,8 +296,45 @@ class Store {
                     geo_locale = excluded.geo_locale,
                     status = 'running',
                     last_outcome = NULL,
+                    last_activity_counts = NULL,
+                    last_earnable = NULL,
                     last_start_at = excluded.last_start_at
             `),
+      clearAccountActivities: this.db.prepare(
+        "DELETE FROM account_activities WHERE email = ?",
+      ),
+      clearStaleActivities: this.db.prepare(
+        "DELETE FROM account_activities WHERE email = ? AND ts < ?",
+      ),
+      getActivityResult: this.db.prepare(
+        "SELECT status, points_gained as pointsGained, run_start as runStart FROM account_activities WHERE email = ? AND activity = ? AND title = ?",
+      ),
+      getAccountStart: this.db.prepare(
+        "SELECT last_start_at as startAt FROM accounts WHERE email = ?",
+      ),
+      upsertActivityResult: this.db.prepare(`
+                INSERT INTO account_activities (email, activity, title, status, points_gained, reason, ts, run_start)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(email, activity, title) DO UPDATE SET
+                    status = excluded.status,
+                    points_gained = excluded.points_gained,
+                    reason = excluded.reason,
+                    ts = excluded.ts,
+                    run_start = excluded.run_start
+            `),
+      allActivityResults: this.db.prepare(`
+                SELECT email, activity, title, status, points_gained as pointsGained, reason
+                FROM account_activities ORDER BY ts ASC
+            `),
+      setActivityCounts: this.db.prepare(
+        "UPDATE accounts SET last_activity_counts = ? WHERE email = ?",
+      ),
+      getEarnable: this.db.prepare(
+        "SELECT last_earnable as value FROM accounts WHERE email = ?",
+      ),
+      setEarnable: this.db.prepare(
+        "UPDATE accounts SET last_earnable = ? WHERE email = ?",
+      ),
       // last_points keeps its previous value when the new one is NULL: a
       // failed/cancelled account reports a placeholder balance (the cluster
       // master logs 0/0 for a worker that died), and a placeholder must not
@@ -326,7 +396,9 @@ class Store {
                        streak_protection_enabled as streakProtectionEnabled,
                        streak_protection_remaining_days as streakProtectionRemainingDays,
                        streak_counter as streakCounter,
-                       streak_protection_updated_at as streakProtectionUpdatedAt
+                       streak_protection_updated_at as streakProtectionUpdatedAt,
+                       last_activity_counts as lastActivityCounts,
+                       last_earnable as lastEarnable
                 FROM accounts
                 ORDER BY COALESCE(last_end_at, last_start_at) DESC
             `),
@@ -448,6 +520,36 @@ class Store {
                 )
             `),
     };
+  }
+
+  // Within a run the latest line wins. Across runs of the same day a
+  // completed activity is never downgraded, and its points accumulate.
+  _recordActivityResult(event) {
+    const title = event.title || "";
+    const runStart = this.stmts.getAccountStart.get(event.email)?.startAt ?? null;
+    const prev = this.stmts.getActivityResult.get(event.email, event.activity, title);
+    let status = event.activityStatus;
+    let points = event.pointsGained;
+    if (prev && prev.runStart !== runStart && prev.status === "completed") {
+      if (status === "completed") {
+        points = prev.pointsGained == null && points == null
+          ? null
+          : (prev.pointsGained ?? 0) + (points ?? 0);
+      } else {
+        status = "completed";
+        points = prev.pointsGained;
+      }
+    }
+    this.stmts.upsertActivityResult.run(
+      event.email,
+      event.activity,
+      title,
+      status,
+      points,
+      event.reason,
+      event.ts,
+      runStart,
+    );
   }
 
   _readMeta(key) {
@@ -633,7 +735,26 @@ class Store {
           event.geoLocale || null,
           event.ts,
         );
+        this.stmts.clearStaleActivities.run(event.email, startOfLocalDay(event.ts));
         this._pushActivity(event);
+        break;
+      }
+      case "earnable": {
+        // Only fields the line actually reports are replaced (app points arrive separately).
+        let current = {};
+        try {
+          current = JSON.parse(this.stmts.getEarnable.get(event.email)?.value || "{}");
+        } catch { /* start fresh */ }
+        for (const key of ["mobile", "browser", "app"]) {
+          if (key in event) current[key] = event[key];
+        }
+        this.stmts.setEarnable.run(JSON.stringify(current), event.email);
+        break;
+      }
+      case "activity-result": {
+        this._recordActivityResult(event);
+        // Unconfirmed results used to reach the feed as generic warnings.
+        if (event.level === "warn" || event.level === "error") this._pushActivity(event);
         break;
       }
       case "account-end": {
@@ -664,6 +785,14 @@ class Store {
           error,
           outcome,
         );
+        if (event.activityCounts) {
+          this.stmts.setActivityCounts.run(
+            JSON.stringify(event.activityCounts),
+            event.email,
+          );
+        }
+        // What remained earnable at the start of the run is stale once it ends.
+        this.stmts.setEarnable.run(null, event.email);
         if (event.gained != null) {
           this.stmts.insertHistory.run(
             event.email,
@@ -1331,6 +1460,22 @@ class Store {
     return this.stmts.allAccounts.all();
   }
 
+  // email -> today's activity results (merged across the day's runs).
+  accountActivities() {
+    const byEmail = {};
+    for (const row of this.stmts.allActivityResults.all()) {
+      (byEmail[row.email] ||= []).push({
+        activity: row.activity,
+        title: row.title,
+        status: row.status,
+        pointsGained: row.pointsGained,
+        pointsKnown: row.pointsGained != null,
+        reason: row.reason,
+      });
+    }
+    return byEmail;
+  }
+
   snapshotRuns(limit = 30) {
     return this.stmts.recentRuns.all(limit);
   }
@@ -1368,6 +1513,7 @@ class Store {
     this.db.exec("BEGIN");
     try {
       this.stmts.deleteAccountRow.run(email);
+      this.stmts.clearAccountActivities.run(email);
       this.stmts.deleteAccountHistory.run(email);
       this.stmts.deleteAccountActivity.run(email);
       this.db.exec("COMMIT");

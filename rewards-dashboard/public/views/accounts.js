@@ -203,7 +203,7 @@ function partialReason(account) {
   return null;
 }
 
-function featureChips(account) {
+function featureChips(account, afterEarned = "") {
   const activities = Array.isArray(account.activities) ? account.activities : [];
   const earned = new Map();
   const outstanding = new Map();
@@ -260,7 +260,38 @@ function featureChips(account) {
     return `<span class="point-source ${className}" title="${U.escapeAttr(title)}"><strong>${U.escapeHtml(chip.label)}</strong> ${U.escapeHtml(chip.detail + count)}</span>`;
   });
 
-  return [...renderChips(earned, "point-source--complete"), ...renderChips(outstanding, "point-source--target")].join("");
+  return [...renderChips(earned, "point-source--complete"), afterEarned, ...renderChips(outstanding, "point-source--target")].join("");
+}
+
+// Day totals the per-activity chips can't show: script points no activity line
+// accounts for, and balance movement from outside the script (e.g. Xbox).
+function reconciliationChips(account, activities) {
+  const history = (accountsPayload?.histories || {})[account.key] || [];
+  if (!history.length) return "";
+  const todayKey = U.tzDayKey(new Date());
+  const scriptToday = history
+    .filter((h) => U.tzDayKey(h.ts) === todayKey)
+    .reduce((sum, h) => sum + (h.gained ?? 0), 0);
+  const trueToday = U.bucketByDay(history).find((d) => d.dayKey === todayKey)?.gained;
+  if (trueToday == null) return "";
+
+  const chips = [];
+  const list = Array.isArray(activities) ? activities : [];
+  if (list.length) {
+    const attributed = list.reduce(
+      (sum, a) => sum + (a.status === "completed" || a.status === "confirmed" ? Number(a.pointsGained) || 0 : 0),
+      0,
+    );
+    const unattributed = scriptToday - attributed;
+    if (unattributed > 0) {
+      chips.push(`<span class="point-source point-source--complete" title="Points the script reported for today's runs that no activity result accounts for"><strong>Other script points</strong> ${U.escapeHtml(U.fmtSigned(unattributed))} pts</span>`);
+    }
+  }
+  const outside = trueToday - scriptToday;
+  if (outside !== 0) {
+    chips.push(`<span class="point-source point-source--complete" title="Balance change today that the script did not report (Xbox, other sources)"><strong>Outside script</strong> ${U.escapeHtml(U.fmtSigned(outside))} pts</span>`);
+  }
+  return chips.join("");
 }
 
 function earnableChips(account) {
@@ -380,6 +411,11 @@ function detailGroups(a, protection) {
 
 function renderAccountPanel(a, live) {
   const protection = protectionPresentation(a);
+  // The API's live activity list is memory-only; the log-derived one survives restarts.
+  const usingLoggedActivities =
+    !(Array.isArray(live?.activities) && live.activities.length) &&
+    Array.isArray(a.activities) &&
+    a.activities.length > 0;
   const { usable, running } = controlState();
   const displayStatus = U.accountDisplayStatus(
     a,
@@ -462,16 +498,27 @@ function renderAccountPanel(a, live) {
   const featureChipsHtml = [
     featureChips({
       ...(live || {}),
-      lastError:
-        displayStatus !== a.status
+      ...(usingLoggedActivities ? { activities: a.activities } : {}),
+      lastError: usingLoggedActivities
+        ? null
+        : displayStatus !== a.status
           ? live?.error || null
           : partialReason(a) || live?.error,
-    }),
-    earnableChips(live || {}),
+    }, reconciliationChips(a, usingLoggedActivities ? a.activities : live?.activities)),
+    earnableChips({ ...(live || {}), earnable: live?.earnable || a.earnable }),
   ].filter(Boolean).join("");
+  const counts = a.activityCounts;
+  const countsTitle = counts
+    ? "Last run: " + [
+      ["completed", counts.completed],
+      ["incomplete", counts.incomplete],
+      ["unavailable", counts.unavailable],
+      ["not applicable", counts.notApplicable],
+    ].filter(([, n]) => n != null).map(([label, n]) => `${n} ${label}`).join(", ")
+    : "";
   const featuresOpen = expandedFeatures.has(a.key);
   const featureDetails = `<details class="account-feature-details" data-feature-details="${U.escapeAttr(a.key)}" ${featuresOpen ? "open" : ""}>
-      <summary><span class="acc-detail-toggle account-feature-caret" aria-hidden="true"><i class="ph ph-caret-right"></i></span><span>Activity Status</span></summary>
+      <summary${countsTitle ? ` title="${U.escapeAttr(countsTitle)}"` : ""}><span class="acc-detail-toggle account-feature-caret" aria-hidden="true"><i class="ph ph-caret-right"></i></span><span>Activity Status</span></summary>
       <div class="account-feature-chips">${featureChipsHtml || '<span class="point-source">No feature results reported</span>'}</div>
     </details>`;
 

@@ -8,8 +8,9 @@ function normalizeEmail(email) {
  * @param apiAccounts  rows from the Control API's GET /accounts
  * @param observed     rows from Store.snapshotAccounts()
  * @param histories    Store.allAccountHistories() — email -> point history
+ * @param activities   Store.accountActivities() — email -> latest run's activity results
  */
-function mergeAccounts(apiAccounts, observed, histories) {
+function mergeAccounts(apiAccounts, observed, histories, activities = {}) {
   const configured = Array.isArray(apiAccounts) ? apiAccounts : [];
   const seen = Array.isArray(observed) ? observed : [];
   const byEmail = new Map();
@@ -23,23 +24,33 @@ function mergeAccounts(apiAccounts, observed, histories) {
     const identity = normalizeEmail(acc && acc.email);
     const local = (identity && byEmail.get(identity)) || null;
     if (local) claimed.add(identity);
-    return buildRow({ config: acc, local, histories });
+    return buildRow({ config: acc, local, histories, activities });
   });
 
   for (const row of seen) {
     const identity = normalizeEmail(row && row.email);
     if (!identity || claimed.has(identity)) continue;
-    merged.push(buildRow({ config: null, local: row, histories }));
+    merged.push(buildRow({ config: null, local: row, histories, activities }));
     claimed.add(identity);
   }
 
   return merged;
 }
 
-function buildRow({ config, local, histories }) {
+function parseCounts(raw) {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function buildRow({ config, local, histories, activities }) {
   const email = (local && local.email) || (config && config.email) || "unknown";
   const history = (local && histories && histories[local.email]) || [];
   const apiProtection = config ? (config.streakProtection ?? null) : null;
+  const dayActivities = (local && activities && activities[local.email]) || [];
 
   return {
     // identity
@@ -74,6 +85,10 @@ function buildRow({ config, local, histories }) {
     lastPoints: local ? local.lastPoints : null,
     lastDurationSec: local ? local.lastDurationSec : null,
     lastOutcome: local ? (local.lastOutcome ?? null) : null,
+    // Per-activity results and tallies parsed from the bot's own log lines.
+    activities: dayActivities,
+    activityCounts: local ? parseCounts(local.lastActivityCounts) : null,
+    earnable: local ? parseCounts(local.lastEarnable) : null,
     // Once we've observed an account finish, our own record is the answer: a
     // clean result must not fall back to an older error the API still holds.
     lastError:
