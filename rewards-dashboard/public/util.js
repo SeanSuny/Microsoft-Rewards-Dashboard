@@ -83,6 +83,24 @@ export function fmtRelative(iso) {
   return `${Math.round(hours / 24)}d ago`;
 }
 
+// Like fmtRelative, but keeps the smaller unit so long-running items read
+// "2h 15m ago" instead of rounding to "2h ago". Floors (never rounds up) so
+// 1h 40m can't show as "2h". Used only where the extra precision matters.
+export function fmtRelativeDetailed(iso) {
+  if (!iso) return DASH;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return DASH;
+  const mins = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hours < 24) return remMins ? `${hours}h ${remMins}m ago` : `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  return remHours ? `${days}d ${remHours}h ago` : `${days}d ago`;
+}
+
 export function fmtDuration(sec) {
   if (sec == null || Number.isNaN(sec)) return DASH;
   if (sec < 60) return `${Math.round(sec)}s`;
