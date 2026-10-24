@@ -275,7 +275,7 @@ function renderAccountRows(root) {
 
       const sub =
         displayStatus === "running"
-          ? `<span class="hero-sub-running">Running\u2026 ${U.escapeHtml(U.fmtRelative(a.lastStartAt))}</span>`
+          ? `<span class="hero-sub-running">Running\u2026 ${U.escapeHtml(U.fmtRelativeDetailed(a.lastStartAt))}</span>`
           : `Last Run: ${U.escapeHtml(U.fmtRelative(a.lastEndAt || a.lastStartAt))}${
               dur ? ` \u00b7 <span title="Last run duration">⏱ ${U.escapeHtml(dur)}</span>` : ""
             }${gainHtml}`;
