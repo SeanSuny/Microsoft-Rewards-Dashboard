@@ -347,7 +347,7 @@ function renderControlStrip() {
     bits.push(`run starts in ${U.fmtDuration(sleepSec)}`);
   } else if (running) {
     if (bot?.pid) bits.push(`pid ${bot.pid}`);
-    if (bot?.startedAt) bits.push(`started ${U.fmtRelative(bot.startedAt)}`);
+    if (bot?.startedAt) bits.push(`started ${U.fmtRelativeDetailed(bot.startedAt)}`);
     if (run?.accountsTotal)
       bits.push(`${run.accountsSeen || 0}/${run.accountsTotal} accounts`);
     if (run?.collected != null) bits.push(`${U.fmtSigned(run.collected)} pts`);
@@ -502,6 +502,11 @@ setInterval(() => {
     currentView()?.onTick?.(ctx);
   }
 }, 1000);
+// While a run is active, the "started Xh Ym ago" text in the control strip
+// only changes with the clock, not with SSE pushes, so repaint it on a timer.
+setInterval(() => {
+  if (state.status?.botRunning) renderControlStrip();
+}, 15000);
 window.addEventListener("focus", () => refreshActive(true));
 window.addEventListener(
   "resize",
