@@ -16,6 +16,7 @@ const { transformThemeModule } = require("./lib/tsLite");
 const { generateIndexModule, THEMES_DIR } = require("./lib/themeLoader");
 const { PendingLoginCodes } = require("./lib/pendingLoginCodes");
 const { mergeAccounts } = require("./lib/accounts");
+const { ActivityStore } = require("./lib/activityStore");
 
 // confg
 const PORT = Number(process.env.PORT || 8890);
@@ -48,6 +49,8 @@ const log = (level, msg) => {
 };
 
 const hub = new EventHub({ client, replay: LOG_REPLAY, log });
+// Structured per-activity data from the Control API (/history + /status extras).
+const activity = new ActivityStore(store.db, { log });
 
 const scheduler = new Scheduler({
   client,
@@ -189,6 +192,9 @@ hub.on("status", (status) => {
     } catch (e) {
       log("warn", `Could not record the run exit: ${e.message}`);
     }
+    // Capture /status extras (earnable, searchSummary...) before the next run
+    // replaces them, and pull the finished run from /history.
+    activity.syncSoon(client, status);
   }
 
   hub.broadcast("state", currentState());
@@ -297,6 +303,9 @@ async function pollLoop() {
   for (; ;) {
     try {
       await pollOnce();
+      // Boot backfill, and a safety net if an exit event was missed.
+      if (backend.reachable && backend.authOk && activity.needsSync(backend.bot))
+        activity.syncSoon(client, backend.bot);
     } catch (e) {
       backend.reachable = false;
       backend.bot = null;
@@ -570,6 +579,33 @@ async function handleApi(req, res, url) {
       exits,
       apiError,
     });
+  }
+
+  // Per-account, per-Rewards-day activity tables (see lib/activityModel.js).
+  if (pathname === "/api/activity-days" && method === "GET") {
+    const days = Math.min(
+      60,
+      Math.max(1, Number(searchParams.get("days")) || 14),
+    );
+    const p = activity.payload({ days });
+    const headers = {
+      "Cache-Control": "no-cache", // always revalidate; unchanged data is a 304
+      ETag: p.etag,
+      Vary: "Accept-Encoding",
+    };
+    if (req.headers["if-none-match"] === p.etag) {
+      res.writeHead(304, headers);
+      return res.end();
+    }
+    const gz = /\bgzip\b/.test(req.headers["accept-encoding"] || "");
+    const body = gz ? p.gzip : p.json;
+    res.writeHead(200, {
+      ...headers,
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Length": body.length,
+      ...(gz ? { "Content-Encoding": "gzip" } : {}),
+    });
+    return res.end(body);
   }
 
   if (pathname === "/api/logs" && method === "GET") {

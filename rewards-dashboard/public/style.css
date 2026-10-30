@@ -3070,3 +3070,380 @@ tbody tr:hover {
       grid-template-columns: 1fr;
     }
 }
+
+/* Activity accounting (views/activityTable.js) */
+.act-panel {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  margin-top: var(--space-10);
+}
+.act-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+.act-day {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
+.act-day-select {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-8);
+}
+.act-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(14rem, 1fr);
+  gap: var(--space-12);
+}
+/* Stack by the card's own width, not the viewport's. */
+@container (max-width: 720px) {
+  .act-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.act-card {
+  min-width: 0;
+  background: var(--surface-alt);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-10) var(--space-12);
+}
+.act-card-title {
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-2xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* Status chips: label + icon, never colour alone */
+.act-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 1px var(--space-8);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.act-state--done {
+  color: var(--positive);
+  background: var(--positive-bg);
+}
+.act-state--partial {
+  color: var(--amber);
+  background: var(--amber-bg);
+}
+.act-state--unverified {
+  color: var(--text-muted);
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+.act-state--unavailable,
+.act-state--na {
+  color: var(--text-muted);
+  background: var(--surface);
+  border-color: var(--border);
+}
+.act-state--attention {
+  color: var(--negative);
+  background: var(--negative-bg);
+}
+.act-state--pending {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+/* Points table */
+.act-table-wrap {
+  overflow-x: auto;
+}
+.act-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-xs);
+}
+.act-table th {
+  padding: var(--space-4) var(--space-6);
+  border-bottom: var(--border-width) solid var(--border);
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  text-align: left;
+  color: var(--text-muted);
+}
+.act-table td {
+  padding: var(--space-4) var(--space-6);
+  border-bottom: var(--border-width) solid color-mix(in srgb, var(--border) 55%, transparent);
+  vertical-align: top;
+}
+.act-table .act-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.act-name {
+  white-space: nowrap;
+}
+.act-table td.act-detail,
+.act-detail {
+  white-space: normal; /* the table inherits nowrap from elsewhere */
+  color: var(--text-muted);
+  font-size: var(--font-2xs);
+}
+.act-row--quiet td {
+  padding-top: var(--space-6);
+  border-bottom: 0;
+  white-space: normal;
+}
+.act-quiet-list {
+  margin-left: var(--space-6);
+  font-size: var(--font-2xs);
+  color: var(--text-muted);
+}
+.act-detail-inline {
+  display: none;
+  margin-top: var(--space-2);
+  padding-left: calc(var(--space-12) + var(--space-4));
+  font-size: var(--font-3xs);
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: normal;
+}
+/* Narrow cards: fold the Detail column into the name cell. */
+@container (max-width: 520px) {
+  .act-table th:nth-child(4),
+  .act-table td.act-detail {
+    display: none;
+  }
+  .act-detail-inline {
+    display: block;
+  }
+  .act-item-row .act-detail-inline {
+    padding-left: 0;
+  }
+  .act-card {
+    padding: var(--space-8);
+  }
+  .act-name {
+    white-space: normal;
+  }
+  .act-table th,
+  .act-table td {
+    padding-inline: var(--space-4);
+  }
+  .act-table .act-state {
+    padding-inline: var(--space-6);
+  }
+}
+.act-pts {
+  font-weight: 600;
+  color: var(--positive);
+}
+.act-pts--zero {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.act-pts--unknown,
+.act-pts-unknown {
+  color: var(--amber);
+  cursor: help;
+}
+.act-count {
+  margin-left: var(--space-4);
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  font-size: var(--font-3xs);
+  color: var(--text-muted);
+}
+.act-static {
+  padding-left: calc(var(--space-12) + var(--space-4));
+}
+.act-row--unattributed .act-static {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.act-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.act-toggle:focus-visible {
+  outline: var(--border-width-strong) solid var(--accent);
+  outline-offset: 2px;
+}
+.act-toggle .ph {
+  transition: transform var(--duration-fast) ease;
+  color: var(--text-muted);
+}
+.act-toggle[aria-expanded="true"] .ph {
+  transform: rotate(90deg);
+}
+.act-item-row td {
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  font-size: var(--font-2xs);
+}
+.act-item-row .act-name {
+  padding-left: var(--space-20);
+  white-space: normal;
+}
+.act-item-name {
+  overflow-wrap: anywhere;
+}
+
+/* Reconciliation footer */
+.act-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-16);
+  margin: var(--space-10) 0 0;
+  padding-top: var(--space-8);
+  border-top: var(--border-width) solid var(--border);
+}
+.act-total dt {
+  font-size: var(--font-3xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.act-total dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.act-total-sub {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.act-warn {
+  margin: var(--space-6) 0 0;
+  font-size: var(--font-2xs);
+  color: var(--amber);
+}
+
+/* Streak board */
+.act-streaks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}
+.act-streak-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+  font-size: var(--font-xs);
+}
+.act-streak-count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.act-dots {
+  display: flex;
+  gap: var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.act-dot {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  font-size: var(--font-3xs);
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+.act-dot--done {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--text);
+  opacity: 1;
+}
+.act-dot--today {
+  border-color: var(--positive);
+  background: var(--positive-bg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--positive) 30%, transparent);
+}
+.act-reset,
+.act-empty {
+  margin: var(--space-8) 0 0;
+  font-size: var(--font-2xs);
+  color: var(--text-muted);
+}
+.act-facts {
+  display: grid;
+  gap: var(--space-4);
+  margin: var(--space-12) 0 0;
+  padding-top: var(--space-8);
+  border-top: var(--border-width) solid var(--border);
+  font-size: var(--font-xs);
+}
+.act-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+.act-facts dt {
+  color: var(--text-muted);
+}
+.act-facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+.act-summary-verdict {
+  margin-left: var(--space-8);
+}
+
+
+/* Phones: an open Activity panel needs the full card width, so it moves to
+   its own row; the protection icon and delete button stay on the row above. */
+@media (max-width: 768px) {
+  .account-secondary-row > .account-protection-rail {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .account-secondary-row > .acc-feature-actions {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .account-secondary-row > .account-feature-details[open] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* Beta6 additions: estimated points and the pending streak step */
+.act-pts--est {
+  color: var(--text-muted);
+  font-style: italic;
+  font-weight: 400;
+  cursor: help;
+}
+.act-dot--next {
+  border-style: dashed;
+  border-color: var(--accent);
+  opacity: 1;
+}
