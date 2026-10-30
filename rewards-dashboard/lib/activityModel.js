@@ -25,6 +25,7 @@ const GROUPS = {
   "more-promotions": { label: "More Promos", order: 30 },
   punchcards: { label: "Punch Cards", order: 40 },
   "read-to-earn": { label: "Read to Earn", order: 50 },
+  "earn-page": { label: "Earn Page", order: 55 },
   "daily-check-in": { label: "Daily Check-in", order: 60 },
   "bonus-claim": { label: "Bonus Claim", order: 70 },
   "visual-search": { label: "Visual Search", order: 80 },
@@ -41,6 +42,8 @@ const ACTIVITY_GROUP = {
   "daily-set": "daily-set",
   "more-promotions": "more-promotions",
   "punchcard-child": "punchcards",
+  punchcard: "punchcards", // the parent punch card pass (beta6)
+  "browser-earn": "earn-page", // the /earn page pass (beta6)
   "read-to-earn": "read-to-earn",
   "daily-check-in": "daily-check-in",
   doClaimBonusPoints: "bonus-claim",
@@ -77,6 +80,17 @@ const ATTENTION_REASONS = new Set([
 // Not a failure: the step simply isn't done yet. Excluded from the verdict.
 const INFORMATIONAL_PENDING = new Set(["step-incomplete"]);
 
+// Promotions the script lists (and tries to complete) but that have no card on
+// the account's Rewards page, so its click step fails with "ambiguous-target"
+// ("multiple visible controls match... no control was clicked"). Seen on every
+// account, every day since 10-22, and the script's author confirms the card is
+// not there for them either. Matched by title so that the same error on any
+// OTHER promo still counts as a real problem.
+const NO_CARD_PROMOS = new Set(["claim your points from daily streaks"]);
+const isNoCardPromo = (d) =>
+  d.reason === "ambiguous-target" &&
+  NO_CARD_PROMOS.has(String(d.title || "").trim().toLowerCase());
+
 /**
  * @returns {{state:string, cause:string, informational?:boolean}}
  * state: done | pending | unverified | attention | unavailable | n/a
@@ -100,6 +114,7 @@ function classifyDetail(d, ctx = {}) {
     // Accounts that never receive a Visual Search streak always hit this.
     return { state: "unavailable", cause: "likely-not-offered" };
   }
+  if (isNoCardPromo(d)) return { state: "unavailable", cause: "listed-without-card" };
   if (d.status === "failed") return { state: "attention", cause: "failed" };
   if (INFORMATIONAL_PENDING.has(d.reason))
     return { state: "pending", cause: d.reason, informational: true };
@@ -527,6 +542,7 @@ module.exports = {
   buildDays,
   buildDaysFromEntries,
   compactDay,
+  NO_CARD_PROMOS,
   rewardsDayOf,
   normalizePunchcards,
   PUNCHCARD_KEYS,

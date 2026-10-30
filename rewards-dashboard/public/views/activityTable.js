@@ -27,6 +27,7 @@ const CAUSE_TEXT = {
   confirmed: "Confirmed",
   "not-offered": "Not offered on this account",
   "likely-not-offered": "Probably not offered (no streak for this account)",
+  "listed-without-card": "Listed by Microsoft, but there is no card for it on the page",
   "not-applicable": "Not applicable",
   "quota-unavailable": "Quota couldn\u2019t be read",
   "activation-data-unavailable": "Offer data couldn\u2019t be read",
@@ -39,6 +40,7 @@ const CAUSE_TEXT = {
   "ambiguous-target": "Script couldn\u2019t pick the right button",
   "activation-control-missing": "Control not found on the page",
   "search-attempt-limit-reached": "Search attempt limit reached",
+  "earn-pass-incomplete": "Earn page pass didn\u2019t finish",
   "step-incomplete": "Step not completed yet",
   failed: "Failed",
 };
@@ -48,8 +50,14 @@ const humanize = (code) =>
     .replace(/[-_]+/g, " ")
     .replace(/^./, (c) => c.toUpperCase());
 
+const shorten = (text, n) => (text.length > n ? `${text.slice(0, n - 1)}\u2026` : text);
+
+// A failure's own error text is the useful part ("net::ERR_HTTP2_PROTOCOL_ERROR"),
+// so show it instead of a bare "Failed".
 const causeText = (item) =>
-  CAUSE_TEXT[item.cause] || item.message || humanize(item.cause || item.reason);
+  item.cause === "failed" && item.message
+    ? `Failed: ${shorten(item.message, 140)}`
+    : CAUSE_TEXT[item.cause] || item.message || humanize(item.cause || item.reason);
 
 export function stateChip(state, labelOverride) {
   const s = STATES[state] || STATES["n/a"];
@@ -131,7 +139,7 @@ function itemRows(g, keyBase, hidden) {
       return `<tr class="act-item-row" data-act-items="${U.escapeAttr(keyBase)}" ${hidden ? "hidden" : ""}>
         <td class="act-name"><span class="act-item-name">${U.escapeHtml(name)}</span>${inlineDetail(detail)}</td>
         <td>${stateChip(it.state)}</td>
-        <td class="act-num">${pointsCell(it.points, it.pointsKnown, it.pointsKnown ? 0 : it.estimatedPoints)}</td>
+        <td class="act-num">${pointsCell(it.points, it.pointsKnown || it.state !== "done", it.pointsKnown ? 0 : it.estimatedPoints)}</td>
         <td class="act-detail">${U.escapeHtml(detail)}</td>
       </tr>`;
     })
