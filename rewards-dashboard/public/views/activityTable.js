@@ -69,11 +69,30 @@ function pointsCell(points, known, estimated = 0) {
   return '<span class="act-pts act-pts--zero">\u2013</span>';
 }
 
+/** "Oct week 4: 6/8 · 2 locked (as of Oct 28)" for each known punch card. */
+export function punchcardText(cards) {
+  return (cards || [])
+    .map((c) => {
+      const bits = [`${c.done}/${c.total}`];
+      if (c.done >= c.total) bits[0] += " complete";
+      if (c.locked) bits.push(`${c.locked} locked`);
+      if (c.points != null)
+        bits.push(`${U.fmtSigned(c.points)}${c.pointsAvailable != null ? ` of ${U.fmtNumber(c.pointsAvailable)}` : ""} pts`);
+      let text = `${c.title ? `${c.title}: ` : ""}${bits.join(" \u00b7 ")}`;
+      if (c.asOf) text += ` (as of ${U.localDateLabel(c.asOf, { month: "short", day: "numeric" })})`;
+      return text;
+    })
+    .join("; ");
+}
+
 function groupDetail(g, day) {
   const parts = [];
   let sameCause = false;
   const active = g.items.length - g.counts.unavailable - g.counts["n/a"];
 
+  if (g.id === "punchcards" && day.punchcards && day.punchcards.length) {
+    parts.push(punchcardText(day.punchcards));
+  }
   if (g.id === "search" && day.searchSummary) {
     const s = day.searchSummary;
     parts.push(`PC ${U.fmtNumber(s.desktop)} \u00b7 Mobile ${U.fmtNumber(s.mobile)}${s.bonus ? ` \u00b7 Bonus ${U.fmtNumber(s.bonus)}` : ""}`);
@@ -144,6 +163,17 @@ function quietRow(groups) {
 
 function syntheticRows(day) {
   const rows = [];
+  if (day.punchcards && day.punchcards.length && !day.groups.some((g) => g.id === "punchcards")) {
+    const complete = day.punchcards.every((c) => c.done >= c.total);
+    const text = punchcardText(day.punchcards);
+    const pts = day.punchcards.reduce((s, c) => s + (c.points || 0), 0);
+    rows.push(`<tr class="act-row act-row--${complete ? "done" : "pending"}">
+      <td class="act-name"><span class="act-static">Punch Cards</span>${inlineDetail(text)}</td>
+      <td>${stateChip(complete ? "done" : "pending", complete ? "Complete" : "In progress")}</td>
+      <td class="act-num">${pts > 0 ? pointsCell(pts, true) : '<span class="act-pts act-pts--zero">\u2013</span>'}</td>
+      <td class="act-detail">${U.escapeHtml(text)}</td>
+    </tr>`);
+  }
   const app = Number(day.earnable && day.earnable.app);
   if (app > 0) {
     rows.push(`<tr class="act-row act-row--pending">

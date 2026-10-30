@@ -160,6 +160,8 @@ hub.on("entry", (entry) => {
     const line = entryToDockerLine(entry);
     const event = line ? parseLine(line) : null;
     if (event) {
+      // Card progress only exists in this log line; idempotent, so replays are harmless.
+      if (event.kind === "punchcard-progress") activity.recordPunchcard(event);
       store.apply(event);
       hub.broadcast("state", currentState());
       if (event.kind === "login-number") {

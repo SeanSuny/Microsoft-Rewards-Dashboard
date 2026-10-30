@@ -126,6 +126,18 @@ const HOUR = 3600 * 1000;
 
 const isoDate = (ms) => new Date(ms).toISOString().slice(0, 10);
 
+/**
+ * The Rewards day a timestamp falls in, for a daily reset at resetHourUtc:Z.
+ * Named after the UTC date of the window's midpoint, the same rule
+ * rewardsDayKey() applies to a known reset time.
+ */
+function rewardsDayOf(ts, resetHourUtc = DEFAULT_RESET_HOUR_UTC) {
+  const d = new Date(ts);
+  const boundary = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), resetHourUtc);
+  const start = ts >= boundary ? boundary : boundary - 24 * HOUR;
+  return isoDate(start + 12 * HOUR);
+}
+
 function rewardsDayKey(entry, resetHourUtc = DEFAULT_RESET_HOUR_UTC) {
   const own = Date.parse(entry.account.resetAt);
   const resetAt = Number.isFinite(own)
@@ -133,7 +145,56 @@ function rewardsDayKey(entry, resetHourUtc = DEFAULT_RESET_HOUR_UTC) {
     : (entry.account.streaks || []).map((s) => Date.parse(s.resetAt)).find(Number.isFinite);
   if (resetAt) return isoDate(resetAt - 12 * HOUR);
   const ts = Date.parse(entry.endedAt || entry.startedAt);
-  return isoDate(ts - resetHourUtc * HOUR);
+  return rewardsDayOf(ts, resetHourUtc);
+}
+
+// ---------------------------------------------------------------------------
+// Punch cards. Today the script only reports a card's overall progress in a
+// log line (see parser.js), but a structured field has been requested. This
+// adapter reads that field if it appears, so the dashboard switches over by
+// itself. The key and field names below are a GUESS at what the script will
+// use: once the real shape is known, this is the only function to adjust.
+// ---------------------------------------------------------------------------
+const PUNCHCARD_KEYS = ["punchCards", "punchcards", "punchCardProgress"];
+
+function normalizePunchcards(raw) {
+  if (!Array.isArray(raw)) return [];
+  const num = (v) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+  return raw
+    .map((c) => {
+      if (!c || typeof c !== "object") return null;
+      const pick = (...keys) => keys.map((k) => c[k]).find((v) => v != null);
+      let done = num(pick("completedSteps", "done", "completed"));
+      let total = num(pick("totalSteps", "total", "steps", "max"));
+      const progress = pick("progress"); // number, or "6/8"
+      if (typeof progress === "string") {
+        const m = /^(\d+)\s*\/\s*(\d+)$/.exec(progress.trim());
+        if (m) [done, total] = [Number(m[1]), Number(m[2])];
+      } else if (done == null) done = num(progress);
+      if (done == null || total == null || total <= 0) return null;
+      return {
+        offerId: String(pick("offerId", "id") ?? ""),
+        title: pick("title", "name") ?? null,
+        done,
+        total,
+        locked: num(pick("lockedSteps", "locked", "lockedOrDisabled")),
+        points: num(pick("pointsGained", "points", "earnedPoints")),
+        pointsAvailable: num(pick("pointsAvailable", "maxPoints", "pointsTotal", "rewardPoints")),
+        source: "script",
+      };
+    })
+    .filter(Boolean);
+}
+
+/** Structured punch cards from the newest entry that has any. */
+function structuredPunchcards(entries) {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    for (const k of PUNCHCARD_KEYS) {
+      const cards = normalizePunchcards(entries[i].account[k]);
+      if (cards.length) return cards;
+    }
+  }
+  return [];
 }
 
 // ---------------------------------------------------------------------------
@@ -360,6 +421,9 @@ function buildAccountDay(email, day, entries) {
     verdict: dayVerdict(groups),
     resetAt: last.resetAt || null,
     resetAtSource: last.resetAtSource || null,
+    // Structured (script-provided) cards; the store adds log-derived ones when
+    // the script provides none.
+    punchcards: structuredPunchcards(entries),
     points: {
       gained,
       attributed,
@@ -463,4 +527,7 @@ module.exports = {
   buildDays,
   buildDaysFromEntries,
   compactDay,
+  rewardsDayOf,
+  normalizePunchcards,
+  PUNCHCARD_KEYS,
 };

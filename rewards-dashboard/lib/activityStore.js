@@ -18,7 +18,13 @@
  */
 
 const zlib = require("node:zlib");
-const { normalizeRun, buildDaysFromEntries, compactDay } = require("./activityModel");
+const {
+  normalizeRun,
+  buildDaysFromEntries,
+  compactDay,
+  rewardsDayOf,
+  PUNCHCARD_KEYS,
+} = require("./activityModel");
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS run_account_snapshots (
@@ -30,6 +36,18 @@ CREATE TABLE IF NOT EXISTS run_account_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_ras_email_ended
   ON run_account_snapshots (email, ended_at);
+
+-- Punch card progress read from the log line; one row per account, card, day.
+CREATE TABLE IF NOT EXISTS punchcard_progress (
+  email    TEXT NOT NULL,
+  offer_id TEXT NOT NULL,
+  day      TEXT NOT NULL,
+  done     INTEGER NOT NULL,
+  total    INTEGER NOT NULL,
+  locked   INTEGER,
+  seen_at  TEXT NOT NULL,
+  PRIMARY KEY (email, offer_id, day)
+);
 `;
 
 const EXTRA_KEYS = ["earnable", "searchSummary", "browserPhases", "appQuotaState"];
@@ -78,6 +96,8 @@ function trimAccount(a) {
   for (const list of DETAIL_LISTS)
     out.completion[list] = (completion[list] || []).map(trimDetail);
   for (const k of EXTRA_KEYS) if (a[k] !== undefined) out[k] = a[k];
+  // Structured punch cards, if the script provides them (see activityModel.js).
+  for (const k of PUNCHCARD_KEYS) if (a[k] !== undefined) out[k] = a[k];
   return out;
 }
 
@@ -108,7 +128,27 @@ class ActivityStore {
       ),
       prune: db.prepare("DELETE FROM run_account_snapshots WHERE ended_at < ?"),
       count: db.prepare("SELECT COUNT(*) AS n FROM run_account_snapshots"),
+      latestSnapshot: db.prepare(
+        "SELECT snapshot FROM run_account_snapshots ORDER BY ended_at DESC LIMIT 1",
+      ),
+      pcGet: db.prepare(
+        "SELECT done, total, locked FROM punchcard_progress WHERE email = ? AND offer_id = ? AND day = ?",
+      ),
+      pcUpsert: db.prepare(
+        `INSERT INTO punchcard_progress (email, offer_id, day, done, total, locked, seen_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (email, offer_id, day) DO UPDATE SET
+           done = excluded.done, total = excluded.total,
+           locked = excluded.locked, seen_at = excluded.seen_at`,
+      ),
+      pcForAccount: db.prepare(
+        `SELECT offer_id, day, done, total, locked FROM punchcard_progress
+         WHERE email = ? AND day <= ? AND day >= ? ORDER BY day DESC, seen_at DESC`,
+      ),
+      pcPrune: db.prepare("DELETE FROM punchcard_progress WHERE day < ?"),
     };
+    // The hour (UTC) the Rewards day rolls over, learned from stored runs.
+    this._resetHour = this._learnResetHour();
     this._seenRuns = new Set(); // run ids already ingested, even if empty
     this._pendingExtras = new Map(); // runId -> status accounts, if history lags
     this._inFlight = null;
@@ -119,6 +159,69 @@ class ActivityStore {
     this.version = 0;
     this._epoch = Date.now().toString(36);
     this._payloads = new Map();
+  }
+
+  _learnResetHour() {
+    try {
+      const row = this.stmts.latestSnapshot.get();
+      const at = row && Date.parse(JSON.parse(row.snapshot).account.resetAt);
+      if (Number.isFinite(at)) return new Date(at).getUTCHours();
+    } catch { /* fall back to the default */ }
+    return 8;
+  }
+
+  _noteResetAt(resetAt) {
+    const at = Date.parse(resetAt);
+    if (Number.isFinite(at)) this._resetHour = new Date(at).getUTCHours();
+  }
+
+  // -- punch cards (log-derived) -------------------------------------------
+
+  /**
+   * Record a "punchcard-progress" event from parser.js. Idempotent: the same
+   * line seen twice (desktop + mobile, or a log replay) changes nothing.
+   * @returns {boolean} whether anything changed
+   */
+  recordPunchcard(ev) {
+    const at = Date.parse(ev && ev.ts);
+    if (!ev || !ev.email || !ev.offerId || !Number.isFinite(at)) return false;
+    if (!(ev.total > 0) || !(ev.done >= 0) || ev.done > ev.total) return false;
+    const day = rewardsDayOf(at, this._resetHour);
+    const cur = this.stmts.pcGet.get(ev.email, ev.offerId, day);
+    const locked = ev.locked ?? null;
+    if (cur && cur.done === ev.done && cur.total === ev.total && cur.locked === locked) return false;
+    this.stmts.pcUpsert.run(ev.email, ev.offerId, day, ev.done, ev.total, locked, ev.ts);
+    this.version++;
+    return true;
+  }
+
+  /**
+   * Log-derived cards for one account-day. Cards recorded that day win; with
+   * none, the most recent card from the previous 7 days is carried forward and
+   * marked with the day it was last seen (asOf), unless it is already complete.
+   */
+  punchcardsFor(email, day) {
+    const from = new Date(Date.parse(day) - 7 * 86400000).toISOString().slice(0, 10);
+    const rows = this.stmts.pcForAccount.all(email, day, from);
+    const label = (offerId) => {
+      const m = /_([A-Z][a-z]{2})w(\d)_/.exec(offerId);
+      return m ? `${m[1]} week ${m[2]}` : null;
+    };
+    const shape = (r, asOf) => ({
+      offerId: r.offer_id,
+      title: label(r.offer_id),
+      done: r.done,
+      total: r.total,
+      locked: r.locked,
+      asOf: asOf || null,
+      source: "log",
+    });
+    const today = rows.filter((r) => r.day === day);
+    if (today.length) return today.map((r) => shape(r));
+    // Rows are newest first: judge the card by its latest state, so a card
+    // finished since its last incomplete sighting is not shown as stale.
+    const latest = rows[0];
+    return latest && latest.done < latest.total ? [shape(latest, latest.day)] : [];
   }
 
   get size() {
@@ -134,6 +237,7 @@ class ActivityStore {
       if (runId) this._seenRuns.add(runId);
       for (const entry of normalizeRun(rec)) {
         const id = runId || `${rec.startedAt}`;
+        this._noteResetAt(entry.account.resetAt);
         const stored = {
           runId: id,
           startedAt: entry.startedAt,
@@ -196,6 +300,7 @@ class ActivityStore {
 
   prune(now = Date.now()) {
     const cutoff = new Date(now - this.retentionDays * DAY_MS).toISOString();
+    this.stmts.pcPrune.run(cutoff.slice(0, 10));
     const removed = Number(this.stmts.prune.run(cutoff).changes);
     if (removed) this.version++;
     return removed;
@@ -238,6 +343,8 @@ class ActivityStore {
     const built = buildDaysFromEntries(entries);
     const accounts = {};
     for (const [email, byDay] of built) {
+      for (const d of byDay.values())
+        if (!d.punchcards.length) d.punchcards = this.punchcardsFor(email, d.day);
       accounts[email] = [...byDay.values()]
         .sort((a, b) => b.day.localeCompare(a.day))
         .slice(0, days);
