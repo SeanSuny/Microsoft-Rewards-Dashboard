@@ -1,5 +1,6 @@
 import * as U from "../util.js";
 import { cached } from "../api.js";
+import { renderActivity, verdictChip, pickDay } from "./activityTable.js";
 
 let accountsPayload = null;
 let rootEl = null;
@@ -10,6 +11,9 @@ const launching = new Set();
 const selectedForBatch = new Set();
 const expandedAccounts = new Set();
 const expandedFeatures = new Set();
+const expandedActivity = new Set(); // "email|day|group" rows opened in the points table
+const selectedActivityDay = new Map(); // lower-cased email -> chosen Rewards day
+let activityPayload = null; // GET /api/activity-days
 let batchRunning = false;
 
 // Two-step delete: a key must be "armed" by a first click before a second
@@ -339,7 +343,11 @@ function kv(items) {
     .join("")}</dl>`;
 }
 
-function detailGroups(a, protection) {
+// activityShown: the Activity Status panel is rendering this account's live
+// streaks/protection, so the details panel stays static (configuration + run
+// history) and the success streak moves into Run history. Without activity
+// data the original "Streak & protection" card is kept as the only source.
+function detailGroups(a, protection, { activityShown = false } = {}) {
   const groups = [];
 
   groups.push([
@@ -361,36 +369,41 @@ function detailGroups(a, protection) {
     ],
   ]);
 
-  groups.push([
-    "Streak &amp; protection",
-    [
-      ["Success streak", `${a.successStreak} run${a.successStreak === 1 ? "" : "s"}`],
-      ...(protection
-        ? [
-          [
-            "Current streak",
-            a.streakCounter == null
-              ? "Unavailable"
-              : `${U.fmtNumber(a.streakCounter)} day${a.streakCounter === 1 ? "" : "s"}`,
-          ],
-          ["Streak protection", protection.state === "On" ? "Enabled" : "Disabled"],
-          [
-            "Protection days remaining",
-            a.streakProtectionRemainingDays == null
-              ? "Unavailable"
-              : `${a.streakProtectionRemainingDays} day${a.streakProtectionRemainingDays === 1 ? "" : "s"}`,
-          ],
-          ...(a.streakProtectionUpdatedAt
-            ? [["Protection status checked", U.fmtRelative(a.streakProtectionUpdatedAt)]]
-            : []),
-        ]
-        : []),
-    ],
-  ]);
+  if (!activityShown) {
+    groups.push([
+      "Streak &amp; protection",
+      [
+        ["Success streak", `${a.successStreak} run${a.successStreak === 1 ? "" : "s"}`],
+        ...(protection
+          ? [
+            [
+              "Current streak",
+              a.streakCounter == null
+                ? "Unavailable"
+                : `${U.fmtNumber(a.streakCounter)} day${a.streakCounter === 1 ? "" : "s"}`,
+            ],
+            ["Streak protection", protection.state === "On" ? "Enabled" : "Disabled"],
+            [
+              "Protection days remaining",
+              a.streakProtectionRemainingDays == null
+                ? "Unavailable"
+                : `${a.streakProtectionRemainingDays} day${a.streakProtectionRemainingDays === 1 ? "" : "s"}`,
+            ],
+            ...(a.streakProtectionUpdatedAt
+              ? [["Protection status checked", U.fmtRelative(a.streakProtectionUpdatedAt)]]
+              : []),
+          ]
+          : []),
+      ],
+    ]);
+  }
 
   groups.push([
     "Run history",
     [
+      ...(activityShown
+        ? [["Success streak", `${a.successStreak} run${a.successStreak === 1 ? "" : "s"}`]]
+        : []),
       ["Runs recorded by the API", U.fmtNumber(a.apiRuns)],
       ["Points collected (API history)", U.fmtSigned(a.apiTotalCollected)],
       ["Last duration", U.fmtDuration(a.lastDurationSec)],
@@ -517,9 +530,23 @@ function renderAccountPanel(a, live) {
     ].filter(([, n]) => n != null).map(([label, n]) => `${n} ${label}`).join(", ")
     : "";
   const featuresOpen = expandedFeatures.has(a.key);
+  // Structured per-activity accounting; the chips below remain the fallback
+  // when the dashboard has no snapshots for this account yet.
+  const emailKey = a.email.trim().toLowerCase();
+  const actDays = activityPayload?.accounts?.[emailKey] || null;
+  const activityHtml = actDays?.length
+    ? renderActivity(actDays, {
+        email: emailKey,
+        selectedDay: selectedActivityDay.get(emailKey),
+        expanded: expandedActivity,
+      })
+    : null;
+  const activityVerdict = actDays?.length
+    ? `<span class="act-summary-verdict">${verdictChip(pickDay(actDays, selectedActivityDay.get(emailKey)))}</span>`
+    : "";
   const featureDetails = `<details class="account-feature-details" data-feature-details="${U.escapeAttr(a.key)}" ${featuresOpen ? "open" : ""}>
-      <summary${countsTitle ? ` title="${U.escapeAttr(countsTitle)}"` : ""}><span class="acc-detail-toggle account-feature-caret" aria-hidden="true"><i class="ph ph-caret-right"></i></span><span>Activity Status</span></summary>
-      <div class="account-feature-chips">${featureChipsHtml || '<span class="point-source">No feature results reported</span>'}</div>
+      <summary${countsTitle ? ` title="${U.escapeAttr(countsTitle)}"` : ""}><span class="acc-detail-toggle account-feature-caret" aria-hidden="true"><i class="ph ph-caret-right"></i></span><span>Activity Status</span>${activityVerdict}</summary>
+      ${activityHtml || `<div class="account-feature-chips">${featureChipsHtml || '<span class="point-source">No feature results reported</span>'}</div>`}
     </details>`;
 
   return `
@@ -539,7 +566,7 @@ function renderAccountPanel(a, live) {
         <span class="acc-detail-actions">${selectCheckbox}${runButton}</span>
       </div>
       <div class="panel-body account-detail-body" id="${detailsId}" ${isExpanded ? "" : "hidden"}>
-        ${detailGroups(a, protection)}
+        ${detailGroups(a, protection, { activityShown: Boolean(activityHtml) })}
       </div>
       <div class="account-secondary-row">
         <aside class="account-protection-rail" aria-label="Streak protection">${protectionChip}</aside>
@@ -593,6 +620,29 @@ function render(root) {
       const key = details.dataset.featureDetails;
       if (details.open) expandedFeatures.add(key);
       else expandedFeatures.delete(key);
+    }),
+  );
+
+  container.querySelectorAll("select[data-act-day-select]").forEach((sel) =>
+    sel.addEventListener("change", () => {
+      const email = sel.dataset.actDaySelect;
+      selectedActivityDay.set(email, sel.value);
+      render(root);
+      container
+        .querySelector(`select[data-act-day-select="${CSS.escape(email)}"]`)
+        ?.focus();
+    }),
+  );
+
+  container.querySelectorAll("button[data-act-toggle]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.actToggle;
+      if (expandedActivity.has(key)) expandedActivity.delete(key);
+      else expandedActivity.add(key);
+      render(root);
+      container
+        .querySelector(`button[data-act-toggle="${CSS.escape(key)}"]`)
+        ?.focus();
     }),
   );
 
@@ -675,7 +725,14 @@ export default {
 
   async refresh(ctx) {
     context = ctx;
-    accountsPayload = await cached("accounts", ctx.api.accounts, 5000);
+    // Don't rebuild the DOM underneath an open day picker.
+    if (document.activeElement?.matches?.("select[data-act-day-select]")) return;
+    const [accounts, activity] = await Promise.all([
+      cached("accounts", ctx.api.accounts, 5000),
+      cached("activityDays", () => ctx.api.activityDays(), 5000).catch(() => null),
+    ]);
+    accountsPayload = accounts;
+    if (activity) activityPayload = activity;
     this.redraw(ctx);
   },
 

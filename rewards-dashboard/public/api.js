@@ -36,6 +36,8 @@ async function call(method, path, body) {
 
 export const api = {
   summary: () => call("GET", "/api/summary"),
+  // Per-account, per-Rewards-day activity tables (server: lib/activityModel.js).
+  activityDays: (days = 14) => call("GET", `/api/activity-days?days=${days}`),
   accounts: (historyDays = 365) =>
     call("GET", `/api/accounts?historyDays=${historyDays}`),
   runs: (limit = 50) => call("GET", `/api/runs?limit=${limit}`),
