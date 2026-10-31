@@ -425,6 +425,26 @@ function parseLine(rawLine) {
       }
       break;
     }
+    // "No further available steps | offerId=... | progress=6/8 | lockedOrDisabled=2"
+    // Logged once per flow (desktop and mobile) when a run has no steps left to
+    // try. It is the only place the script reports a card's overall progress.
+    case "PUNCHCARD-BROWSER": {
+      const offer = /\bofferId=([^\s|]+)/.exec(message);
+      const prog = /\bprogress=(\d+)\/(\d+)/.exec(message);
+      if (offer && prog && userName.includes("@")) {
+        const locked = /\blockedOrDisabled=(\d+)/.exec(message);
+        return {
+          ...base,
+          kind: "punchcard-progress",
+          email: userName.trim().toLowerCase(),
+          offerId: offer[1],
+          done: Number(prog[1]),
+          total: Number(prog[2]),
+          locked: locked ? Number(locked[1]) : null,
+        };
+      }
+      break;
+    }
     default:
       break;
   }
