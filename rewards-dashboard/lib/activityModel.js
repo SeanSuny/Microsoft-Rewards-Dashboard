@@ -80,6 +80,36 @@ const ATTENTION_REASONS = new Set([
 // Not a failure: the step simply isn't done yet. Excluded from the verdict.
 const INFORMATIONAL_PENDING = new Set(["step-incomplete"]);
 
+// ---------------------------------------------------------------------------
+// Accounts the script did not (fully) run. The script "defers" an account by
+// aborting it (core/AccountState.ts defer()); the run then records the account
+// as status "skipped" (nothing ran) or "partial" (cut short) with the reason in
+// `error`. The reasons below are the ones the script produces.
+// ---------------------------------------------------------------------------
+const DEFERRALS = [
+  { kind: "bot-score", re: /bot-score warning/i, label: "high bot score" },
+  { kind: "rate-limit", re: /service rate limit/i, label: "service rate limit" },
+  { kind: "access-rejected", re: /service rejected account access/i, label: "access rejected" },
+];
+
+/** @returns {{kind:string,label:string,reason:string,cutShort:boolean}|null} */
+function classifyDeferral(account) {
+  const { status, error } = account || {};
+  if (!error || (status !== "skipped" && status !== "partial")) return null;
+  const hit = DEFERRALS.find((d) => d.re.test(error));
+  if (hit) return { kind: hit.kind, label: hit.label, reason: String(error), cutShort: status === "partial" };
+  // "skipped" only ever comes from a deferral, even one this list doesn't know.
+  return status === "skipped"
+    ? { kind: "skipped", label: "skipped", reason: String(error), cutShort: false }
+    : null;
+}
+
+/** Runs from before v5 carry no per-activity completion data at all. */
+function hasStructuredData(account) {
+  const c = (account && account.completion) || {};
+  return Boolean(c.counts) || DETAIL_LISTS.some((k) => (c[k] || []).length > 0);
+}
+
 // Promotions the script lists (and tries to complete) but that have no card on
 // the account's Rewards page, so its click step fails with "ambiguous-target"
 // ("multiple visible controls match... no control was clicked"). Seen on every
@@ -424,6 +454,10 @@ function buildAccountDay(email, day, entries) {
   const attributed = groups.reduce((s, g) => s + g.points, 0);
   const first = entries[0].account;
   const last = entries[entries.length - 1].account;
+  const deferral = classifyDeferral(last);
+  const verdict = dayVerdict(groups);
+  // Nothing ran and the script says why: that is not a "complete" day.
+  if (!groups.length && deferral) verdict.state = "not-run";
   const withSearch = entries.filter((e) => e.account.searchSummary);
   const withEarnable = entries.filter((e) => e.account.earnable);
 
@@ -433,7 +467,10 @@ function buildAccountDay(email, day, entries) {
     runs: entries.map((e) => e.runId),
     groups,
     unmapped,
-    verdict: dayVerdict(groups),
+    verdict,
+    // Why the LATEST run of this day did not (fully) run the account, if so.
+    deferral,
+    lastEndedAt: entries[entries.length - 1].endedAt || null,
     resetAt: last.resetAt || null,
     resetAtSource: last.resetAtSource || null,
     // Structured (script-provided) cards; the store adds log-derived ones when
@@ -543,6 +580,8 @@ module.exports = {
   buildDaysFromEntries,
   compactDay,
   NO_CARD_PROMOS,
+  classifyDeferral,
+  hasStructuredData,
   rewardsDayOf,
   normalizePunchcards,
   PUNCHCARD_KEYS,

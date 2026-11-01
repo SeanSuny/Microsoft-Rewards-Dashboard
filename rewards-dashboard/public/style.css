@@ -3082,7 +3082,7 @@ tbody tr:hover {
 .act-head {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-8);
 }
@@ -3414,7 +3414,14 @@ tbody tr:hover {
   font-weight: 600;
 }
 .act-summary-verdict {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
   margin-left: var(--space-8);
+}
+/* Long placeholder chips may wrap instead of overflowing a narrow card. */
+.act-summary-verdict .act-state {
+  white-space: normal;
 }
 
 
@@ -3446,4 +3453,50 @@ tbody tr:hover {
   border-style: dashed;
   border-color: var(--accent);
   opacity: 1;
+}
+
+/* Placeholders: migration (amber), not run / load failure (red), loading (muted) */
+.act-head-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+.act-day {
+  margin-left: auto;
+}
+.act-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-10) var(--space-12);
+  background: var(--surface-alt);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-xs);
+}
+.act-notice > .ph {
+  flex-shrink: 0;
+  margin-top: 1px;
+  font-size: 1.25rem;
+}
+.act-notice strong {
+  color: var(--text);
+}
+.act-notice p {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+}
+.act-notice--warn {
+  background: var(--amber-bg);
+  border-color: color-mix(in srgb, var(--amber) 40%, var(--border));
+}
+.act-notice--warn > .ph {
+  color: var(--amber);
+}
+.act-notice--error {
+  background: var(--negative-bg);
+  border-color: color-mix(in srgb, var(--negative) 40%, var(--border));
+}
+.act-notice--error > .ph {
+  color: var(--negative);
 }

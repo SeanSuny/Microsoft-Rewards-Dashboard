@@ -23,6 +23,8 @@ const {
   buildDaysFromEntries,
   compactDay,
   rewardsDayOf,
+  classifyDeferral,
+  hasStructuredData,
   PUNCHCARD_KEYS,
 } = require("./activityModel");
 
@@ -154,6 +156,7 @@ class ActivityStore {
     this._inFlight = null;
     this._retryAt = 0;
     this.booted = false;
+    this.syncError = null; // message of the last failed sync, until one succeeds
     // Bumped whenever stored data changes; drives the cached payload + ETag.
     // The epoch keeps ETags unique across restarts.
     this.version = 0;
@@ -236,6 +239,10 @@ class ActivityStore {
       const runId = rec.runId || (rec.exit && rec.exit.runId) || null;
       if (runId) this._seenRuns.add(runId);
       for (const entry of normalizeRun(rec)) {
+        // Pre-v5 runs have no per-activity data; storing them would create empty
+        // days that read as "complete". Skipped/deferred accounts are kept: they
+        // are real outcomes ("not run: high bot score").
+        if (!hasStructuredData(entry.account) && !classifyDeferral(entry.account)) continue;
         const id = runId || `${rec.startedAt}`;
         this._noteResetAt(entry.account.resetAt);
         const stored = {
@@ -319,7 +326,8 @@ class ActivityStore {
     const accounts = {};
     for (const [email, list] of Object.entries(full.accounts))
       accounts[email] = list.map(compactDay);
-    const json = Buffer.from(JSON.stringify({ accounts }));
+    // synced/syncError let the page tell "no data yet" apart from "not synced".
+    const json = Buffer.from(JSON.stringify({ accounts, synced: this.booted, syncError: this.syncError }));
     const built = {
       version: this.version,
       hour,
@@ -378,12 +386,18 @@ class ActivityStore {
           (status && status.lastExit && status.lastExit.runId);
         if (runId && run && run.finished && Array.isArray(run.accounts))
           this.attachExtras(runId, run.accounts);
+        if (!this.booted || this.syncError) this.version++; // the payload's synced state changed
         this.booted = true;
+        this.syncError = null;
         if (added) this.prune();
         this._retryAt = 0;
         return { added };
       } catch (e) {
         this._retryAt = Date.now() + RETRY_BACKOFF_MS;
+        if (this.syncError !== e.message) {
+          this.syncError = e.message;
+          this.version++;
+        }
         throw e;
       } finally {
         this._inFlight = null;
