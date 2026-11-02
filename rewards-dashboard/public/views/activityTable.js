@@ -59,9 +59,9 @@ const causeText = (item) =>
     ? `Failed: ${shorten(item.message, 140)}`
     : CAUSE_TEXT[item.cause] || item.message || humanize(item.cause || item.reason);
 
-export function stateChip(state, labelOverride) {
+export function stateChip(state, labelOverride, iconOverride) {
   const s = STATES[state] || STATES["n/a"];
-  return `<span class="act-state act-state--${s.cls}"><i class="ph ${s.icon}" aria-hidden="true"></i>${U.escapeHtml(labelOverride || s.label)}</span>`;
+  return `<span class="act-state act-state--${s.cls}"><i class="ph ${iconOverride || s.icon}" aria-hidden="true"></i>${U.escapeHtml(labelOverride || s.label)}</span>`;
 }
 
 const ESTIMATE_HINT =
@@ -278,6 +278,7 @@ export function verdictText(day) {
     case "complete-unverified": return `Complete \u00b7 ${v.unverified} unverifiable`;
     case "attention": return `Needs attention \u00b7 ${v.attention}`;
     case "pending": return `${v.pending} pending`;
+    case "not-run": return `Not run \u00b7 ${day.deferral ? day.deferral.label : "skipped"}`;
     default: return "";
   }
 }
@@ -287,11 +288,56 @@ const VERDICT_CLASS = {
   "complete-unverified": "unverified",
   attention: "attention",
   pending: "pending",
+  "not-run": "attention",
 };
 
 export function verdictChip(day) {
   const cls = VERDICT_CLASS[day.verdict.state] || "na";
   return `<span class="act-state act-state--${cls}">${U.escapeHtml(verdictText(day))}</span>`;
+}
+
+/** Amber chip for an account that has no v5 activity data yet. */
+export function migrationChip() {
+  return stateChip("partial", "Migration completes on the first full v5 run", "ph-hourglass-medium");
+}
+
+/** Red chip when the latest run did not (fully) run the account. */
+function deferralChip(day) {
+  const d = day.deferral;
+  if (!d) return "";
+  return stateChip("attention", `${d.cutShort ? "Run stopped early" : "Latest run skipped"} \u00b7 ${d.label}`, "ph-prohibit");
+}
+
+/** What the collapsed "Activity Status" line shows: the verdict, plus any deferral. */
+export function summaryChips(day) {
+  return verdictChip(day) + (day.deferral && day.verdict.state !== "not-run" ? deferralChip(day) : "");
+}
+
+const notice = (kind, icon, title, text) =>
+  `<div class="act-notice act-notice--${kind}" role="status"><i class="ph ${icon}" aria-hidden="true"></i><div><strong>${U.escapeHtml(title)}</strong>${text ? `<p>${U.escapeHtml(text)}</p>` : ""}</div></div>`;
+
+export function renderMigration() {
+  return notice(
+    "warn",
+    "ph-hourglass-medium",
+    "Activity details will appear after this account\u2019s first full v5 run.",
+    "Runs from before v5 don\u2019t include the data this table uses, so there is nothing to show yet.",
+  );
+}
+
+export const renderLoading = (text = "Loading activity\u2026") => `<p class="act-empty">${U.escapeHtml(text)}</p>`;
+
+export function renderLoadError(message) {
+  return notice("error", "ph-warning-circle", "Couldn\u2019t read run history from the script.", `Reason: ${message}. Retrying automatically.`);
+}
+
+function notRunNotice(day) {
+  const d = day.deferral || { kind: "skipped", label: "skipped", reason: "" };
+  const when = day.lastEndedAt ? ` Last attempt ${U.fmtRelative(day.lastEndedAt)}.` : "";
+  if (d.kind === "bot-score")
+    return notice("error", "ph-prohibit", "Account not run: high bot score",
+      `Microsoft showed a bot-score warning on this account, so the script skipped it and attempted no activities.${when}`);
+  return notice("error", "ph-prohibit", `Account not run: ${d.label}`, `The script reported: ${d.reason}.${when}`);
 }
 
 export function pickDay(days, selected) {
@@ -324,13 +370,7 @@ export function renderActivity(days, { email, selectedDay, expanded, now = Date.
     syntheticRows(day) +
     quietRow(day.groups.filter((g) => QUIET_STATES.has(g.state)));
 
-  return `<div class="act-panel">
-    <div class="act-head">
-      <label class="act-day"><span class="act-day-label">Day</span>
-        <select class="act-day-select" data-act-day-select="${U.escapeAttr(email)}" aria-label="Rewards day">${options}</select>
-      </label>
-    </div>
-    <div class="act-grid">
+  const grid = `<div class="act-grid">
       <section class="act-card" aria-label="Points breakdown">
         <h3 class="act-card-title">Points breakdown</h3>
         <div class="act-table-wrap">
@@ -346,6 +386,15 @@ export function renderActivity(days, { email, selectedDay, expanded, now = Date.
         ${streakBoard(day, now, isLatest)}
         ${facts(day)}
       </section>
+    </div>`;
+
+  return `<div class="act-panel">
+    <div class="act-head">
+      <span class="act-head-chips">${day.verdict.state === "not-run" ? "" : deferralChip(day)}</span>
+      <label class="act-day"><span class="act-day-label">Day</span>
+        <select class="act-day-select" data-act-day-select="${U.escapeAttr(email)}" aria-label="Rewards day">${options}</select>
+      </label>
     </div>
+    ${day.verdict.state === "not-run" ? notRunNotice(day) : grid}
   </div>`;
 }

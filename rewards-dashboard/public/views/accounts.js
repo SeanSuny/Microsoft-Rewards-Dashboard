@@ -1,6 +1,14 @@
 import * as U from "../util.js";
 import { cached } from "../api.js";
-import { renderActivity, verdictChip, pickDay } from "./activityTable.js";
+import {
+  renderActivity,
+  summaryChips,
+  migrationChip,
+  renderMigration,
+  renderLoading,
+  renderLoadError,
+  pickDay,
+} from "./activityTable.js";
 
 let accountsPayload = null;
 let rootEl = null;
@@ -14,6 +22,7 @@ const expandedFeatures = new Set();
 const expandedActivity = new Set(); // "email|day|group" rows opened in the points table
 const selectedActivityDay = new Map(); // lower-cased email -> chosen Rewards day
 let activityPayload = null; // GET /api/activity-days
+let activityError = null; // last failure fetching it, if any
 let batchRunning = false;
 
 // Two-step delete: a key must be "armed" by a first click before a second
@@ -21,37 +30,6 @@ let batchRunning = false;
 // to remove an account's dashboard data with a single accidental click.
 const deleteArmed = new Set();
 const deleting = new Set();
-
-const SOURCE_LABELS = {
-  search: "Search",
-  bonus: "Bonus search",
-  read: "Read",
-  checkIn: "Check-in",
-  claimReward: "Claim reward",
-  claimBonus: "Claim bonus",
-  urlReward: "URL reward",
-  visualSearch: "Visual search",
-  appReward: "App reward",
-  punchcard: "Punchcard",
-  searchOnBing: "Search activity",
-  "daily-set": "Daily Set",
-  "more-promotions": "More promotions",
-  "punchcard-child": "Punchcard",
-  "punchcard-data": "Punchcard",
-  "app-data": "App data",
-  "daily-check-in": "Daily Check-In",
-  "read-to-earn": "Read to Earn",
-  "visual-search": "Visual search",
-  "visual search": "Visual search",
-  "bonus-search": "Bonus search",
-  "browser-search-api-report": "Experimental API search",
-  "search-on-bing": "Explore on Bing",
-  "url-reward": "Website reward",
-  "doEnsureStreakProtection": "Streak protection",
-  doActivateSearchPerk: "Search perk",
-  doClaimBonusPoints: "Bonus point claim",
-  doVisualSearch: "Visual search",
-};
 
 function controlState() {
   const status = context?.status;
@@ -164,149 +142,6 @@ function renderBatchToolbar(root) {
   U.$(".accounts-run-selected-label", runBtn).textContent = batchRunning ? "Starting\u2026" : "Run selected";
 }
 
-function featureLabel(activity) {
-  const name = cleanFeatureText(activity.activity || activity.name || "Activity");
-  const legacyPromotion = /^(Daily set|More promotions):\s*["“](.+?)["”]$/i.exec(name);
-  const sourceKey = name.charAt(0).toLowerCase() + name.slice(1);
-  const category = SOURCE_LABELS[name] || SOURCE_LABELS[sourceKey] || SOURCE_LABELS[name.toLowerCase()] || legacyPromotion?.[1] || name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]/g, " ").replace(/\b\w/g, char => char.toUpperCase());
-  const title = cleanFeatureText(activity.title || legacyPromotion?.[2] || "");
-  return cleanFeatureText(title ? `${category}: ${title}` : category);
-}
-
-function cleanFeatureText(value) {
-  return String(value).trim().replace(/^[\s"'“”‘’]+|[\s"'“”‘’]+$/g, "");
-}
-
-function featureState(reason, status) {
-  if (/unavailable|not available|quota unavailable|perk unavailable/i.test(reason)) return "unavailable";
-  if (status === "failed" || /\bfailed\b/i.test(reason)) return "failed";
-  if (status === "skipped" || /\bskipped\b/i.test(reason)) return "skipped";
-  return "unconfirmed";
-}
-
-function partialReasonFeatures(reason) {
-  if (!reason) return [];
-  return reason.split(/;\s*/).map(item => {
-    const promotion = /^More promotions:\s*["“](.+?)["”]:\s*(.*)$/i.exec(item);
-    const match = /^([^:]+):\s*(.*)$/.exec(item);
-    if (!match) return null;
-    const promotionTitle = /^More promotions\s*\((.+)\)$/i.exec(match[1].trim());
-    const label = promotion?.[1] || promotionTitle?.[1] || match[1].trim();
-    const detail = promotion?.[2] || match[2];
-    return { label, state: featureState(detail, "unconfirmed"), reason: detail };
-  }).filter(Boolean);
-}
-
-// last_error holds the list of incomplete features only for an account that
-// finished "partial" (or, for rows recorded before outcomes were stored, one
-// that succeeded with a reason). For failed/cancelled accounts it is a plain
-// error message and must not be split into pseudo-features.
-function partialReason(account) {
-  if (account.lastOutcome === "partial") return account.lastError;
-  if (account.lastOutcome == null && account.status === "success") return account.lastError;
-  return null;
-}
-
-function featureChips(account, afterEarned = "") {
-  const activities = Array.isArray(account.activities) ? account.activities : [];
-  const earned = new Map();
-  const outstanding = new Map();
-  const activityLabels = new Set();
-
-  function addChip(collection, key, label, detail, reason) {
-    let chip = collection.get(key);
-    if (!chip) {
-      chip = { label, detail, count: 0, reasons: new Set() };
-      collection.set(key, chip);
-    }
-    chip.count += 1;
-    if (reason) chip.reasons.add(reason);
-  }
-
-  for (const activity of activities) {
-    const label = featureLabel(activity);
-    const key = label.toLowerCase();
-    const reason = [activity.reason, activity.message].filter(Boolean).join("; ");
-    const alreadyComplete = activity.status === "skipped" && /already[- ]complete|offer-state-confirmed/i.test(reason);
-    if (activity.status === "confirmed" || activity.status === "completed" || alreadyComplete) {
-      const points = alreadyComplete
-        ? "already complete"
-        : activity.pointsKnown === false || activity.pointsGained == null
-        ? "points unverified"
-        : `${U.fmtSigned(Number(activity.pointsGained))} pts`;
-      addChip(earned, `${key}|${points.toLowerCase()}`, label, points, reason);
-      activityLabels.add(key);
-    } else if (["unconfirmed", "skipped", "failed", "unavailable"].includes(activity.status)) {
-      const state = featureState(reason, activity.status);
-      addChip(outstanding, `${key}|${state}`, label, state, reason);
-      activityLabels.add(key);
-    }
-  }
-
-  for (const item of partialReasonFeatures(account.lastError)) {
-    const label = cleanFeatureText(item.label);
-    const key = label.toLowerCase();
-    if (activityLabels.has(key)) continue;
-    addChip(outstanding, `${key}|${item.state}`, label, item.state, item.reason);
-  }
-
-  if (!earned.size) {
-    for (const [source, points] of Object.entries(account.live?.bySource || {})) {
-      if (Number(points) <= 0) continue;
-      const label = SOURCE_LABELS[source] || source.replace(/[-_]/g, " ").replace(/\b\w/g, char => char.toUpperCase());
-      addChip(earned, `${label.toLowerCase()}|${points}`, label, `${U.fmtSigned(Number(points))} pts`);
-    }
-  }
-
-  const renderChips = (chips, className) => [...chips.values()].map((chip) => {
-    const count = chip.count > 1 ? ` x${chip.count}` : "";
-    const title = [...chip.reasons].join("; ") || chip.label;
-    return `<span class="point-source ${className}" title="${U.escapeAttr(title)}"><strong>${U.escapeHtml(chip.label)}</strong> ${U.escapeHtml(chip.detail + count)}</span>`;
-  });
-
-  return [...renderChips(earned, "point-source--complete"), afterEarned, ...renderChips(outstanding, "point-source--target")].join("");
-}
-
-// Day totals the per-activity chips can't show: script points no activity line
-// accounts for, and balance movement from outside the script (e.g. Xbox).
-function reconciliationChips(account, activities) {
-  const history = (accountsPayload?.histories || {})[account.key] || [];
-  if (!history.length) return "";
-  const todayKey = U.tzDayKey(new Date());
-  const scriptToday = history
-    .filter((h) => U.tzDayKey(h.ts) === todayKey)
-    .reduce((sum, h) => sum + (h.gained ?? 0), 0);
-  const trueToday = U.bucketByDay(history).find((d) => d.dayKey === todayKey)?.gained;
-  if (trueToday == null) return "";
-
-  const chips = [];
-  const list = Array.isArray(activities) ? activities : [];
-  if (list.length) {
-    const attributed = list.reduce(
-      (sum, a) => sum + (a.status === "completed" || a.status === "confirmed" ? Number(a.pointsGained) || 0 : 0),
-      0,
-    );
-    const unattributed = scriptToday - attributed;
-    if (unattributed > 0) {
-      chips.push(`<span class="point-source point-source--complete" title="Points the script reported for today's runs that no activity result accounts for"><strong>Other script points</strong> ${U.escapeHtml(U.fmtSigned(unattributed))} pts</span>`);
-    }
-  }
-  const outside = trueToday - scriptToday;
-  if (outside !== 0) {
-    chips.push(`<span class="point-source point-source--complete" title="Balance change today that the script did not report (Xbox, other sources)"><strong>Outside script</strong> ${U.escapeHtml(U.fmtSigned(outside))} pts</span>`);
-  }
-  return chips.join("");
-}
-
-function earnableChips(account) {
-  const earnable = account.earnable || account.live?.earnable;
-  if (!earnable) return "";
-  const labels = { mobile: "Mobile", browser: "Desktop", app: "App" };
-  return Object.entries(labels).filter(([key]) => Number(earnable[key]) > 0).map(([key, label]) =>
-    `<span class="point-source point-source--target"><strong>${label}</strong> ${U.escapeHtml(U.fmtNumber(earnable[key]))} earnable</span>`,
-  ).join("");
-}
-
 function protectionPresentation(account) {
   if (account.streakProtectionEnabled == null) return null;
 
@@ -343,11 +178,7 @@ function kv(items) {
     .join("")}</dl>`;
 }
 
-// activityShown: the Activity Status panel is rendering this account's live
-// streaks/protection, so the details panel stays static (configuration + run
-// history) and the success streak moves into Run history. Without activity
-// data the original "Streak & protection" card is kept as the only source.
-function detailGroups(a, protection, { activityShown = false } = {}) {
+function detailGroups(a, protection) {
   const groups = [];
 
   groups.push([
@@ -369,41 +200,10 @@ function detailGroups(a, protection, { activityShown = false } = {}) {
     ],
   ]);
 
-  if (!activityShown) {
-    groups.push([
-      "Streak &amp; protection",
-      [
-        ["Success streak", `${a.successStreak} run${a.successStreak === 1 ? "" : "s"}`],
-        ...(protection
-          ? [
-            [
-              "Current streak",
-              a.streakCounter == null
-                ? "Unavailable"
-                : `${U.fmtNumber(a.streakCounter)} day${a.streakCounter === 1 ? "" : "s"}`,
-            ],
-            ["Streak protection", protection.state === "On" ? "Enabled" : "Disabled"],
-            [
-              "Protection days remaining",
-              a.streakProtectionRemainingDays == null
-                ? "Unavailable"
-                : `${a.streakProtectionRemainingDays} day${a.streakProtectionRemainingDays === 1 ? "" : "s"}`,
-            ],
-            ...(a.streakProtectionUpdatedAt
-              ? [["Protection status checked", U.fmtRelative(a.streakProtectionUpdatedAt)]]
-              : []),
-          ]
-          : []),
-      ],
-    ]);
-  }
-
   groups.push([
     "Run history",
     [
-      ...(activityShown
-        ? [["Success streak", `${a.successStreak} run${a.successStreak === 1 ? "" : "s"}`]]
-        : []),
+      ["Success streak", `${a.successStreak} run${a.successStreak === 1 ? "" : "s"}`],
       ["Runs recorded by the API", U.fmtNumber(a.apiRuns)],
       ["Points collected (API history)", U.fmtSigned(a.apiTotalCollected)],
       ["Last duration", U.fmtDuration(a.lastDurationSec)],
@@ -424,11 +224,6 @@ function detailGroups(a, protection, { activityShown = false } = {}) {
 
 function renderAccountPanel(a, live) {
   const protection = protectionPresentation(a);
-  // The API's live activity list is memory-only; the log-derived one survives restarts.
-  const usingLoggedActivities =
-    !(Array.isArray(live?.activities) && live.activities.length) &&
-    Array.isArray(a.activities) &&
-    a.activities.length > 0;
   const { usable, running } = controlState();
   const displayStatus = U.accountDisplayStatus(
     a,
@@ -508,45 +303,33 @@ function renderAccountPanel(a, live) {
     <aside class="account-status-rail" aria-label="Account status">
       <span class="account-rail-icon ${status.cls}" role="img" aria-label="${U.escapeAttr(status.label)}" title="${U.escapeAttr(status.label)}"><i class="ph ${statusIcons[statusKey] || statusIcons.idle}" aria-hidden="true"></i></span>
     </aside>`;
-  const featureChipsHtml = [
-    featureChips({
-      ...(live || {}),
-      ...(usingLoggedActivities ? { activities: a.activities } : {}),
-      lastError: usingLoggedActivities
-        ? null
-        : displayStatus !== a.status
-          ? live?.error || null
-          : partialReason(a) || live?.error,
-    }, reconciliationChips(a, usingLoggedActivities ? a.activities : live?.activities)),
-    earnableChips({ ...(live || {}), earnable: live?.earnable || a.earnable }),
-  ].filter(Boolean).join("");
-  const counts = a.activityCounts;
-  const countsTitle = counts
-    ? "Last run: " + [
-      ["completed", counts.completed],
-      ["incomplete", counts.incomplete],
-      ["unavailable", counts.unavailable],
-      ["not applicable", counts.notApplicable],
-    ].filter(([, n]) => n != null).map(([label, n]) => `${n} ${label}`).join(", ")
-    : "";
   const featuresOpen = expandedFeatures.has(a.key);
-  // Structured per-activity accounting; the chips below remain the fallback
-  // when the dashboard has no snapshots for this account yet.
+  // Per-activity accounting from the stored run history. An account with no
+  // data yet (a script upgraded from before v5) shows a migration notice until
+  // its first full v5 run; an account the script skipped (for example for a
+  // high bot score) shows that instead of an empty table.
   const emailKey = a.email.trim().toLowerCase();
   const actDays = activityPayload?.accounts?.[emailKey] || null;
-  const activityHtml = actDays?.length
-    ? renderActivity(actDays, {
-        email: emailKey,
-        selectedDay: selectedActivityDay.get(emailKey),
-        expanded: expandedActivity,
-      })
-    : null;
-  const activityVerdict = actDays?.length
-    ? `<span class="act-summary-verdict">${verdictChip(pickDay(actDays, selectedActivityDay.get(emailKey)))}</span>`
-    : "";
+  let activityBody;
+  let activitySummary = "";
+  if (actDays?.length) {
+    activityBody = renderActivity(actDays, {
+      email: emailKey,
+      selectedDay: selectedActivityDay.get(emailKey),
+      expanded: expandedActivity,
+    });
+    activitySummary = summaryChips(pickDay(actDays, selectedActivityDay.get(emailKey)));
+  } else if (activityPayload?.synced) {
+    activityBody = renderMigration();
+    activitySummary = migrationChip();
+  } else if (activityPayload?.syncError || activityError) {
+    activityBody = renderLoadError(activityPayload?.syncError || activityError);
+  } else {
+    activityBody = renderLoading(activityPayload ? "Syncing run history\u2026" : undefined);
+  }
   const featureDetails = `<details class="account-feature-details" data-feature-details="${U.escapeAttr(a.key)}" ${featuresOpen ? "open" : ""}>
-      <summary${countsTitle ? ` title="${U.escapeAttr(countsTitle)}"` : ""}><span class="acc-detail-toggle account-feature-caret" aria-hidden="true"><i class="ph ph-caret-right"></i></span><span>Activity Status</span>${activityVerdict}</summary>
-      ${activityHtml || `<div class="account-feature-chips">${featureChipsHtml || '<span class="point-source">No feature results reported</span>'}</div>`}
+      <summary><span class="acc-detail-toggle account-feature-caret" aria-hidden="true"><i class="ph ph-caret-right"></i></span><span>Activity Status</span>${activitySummary ? `<span class="act-summary-verdict">${activitySummary}</span>` : ""}</summary>
+      ${activityBody}
     </details>`;
 
   return `
@@ -566,7 +349,7 @@ function renderAccountPanel(a, live) {
         <span class="acc-detail-actions">${selectCheckbox}${runButton}</span>
       </div>
       <div class="panel-body account-detail-body" id="${detailsId}" ${isExpanded ? "" : "hidden"}>
-        ${detailGroups(a, protection, { activityShown: Boolean(activityHtml) })}
+        ${detailGroups(a, protection)}
       </div>
       <div class="account-secondary-row">
         <aside class="account-protection-rail" aria-label="Streak protection">${protectionChip}</aside>
@@ -729,10 +512,16 @@ export default {
     if (document.activeElement?.matches?.("select[data-act-day-select]")) return;
     const [accounts, activity] = await Promise.all([
       cached("accounts", ctx.api.accounts, 5000),
-      cached("activityDays", () => ctx.api.activityDays(), 5000).catch(() => null),
+      cached("activityDays", () => ctx.api.activityDays(), 5000).catch((e) => {
+        activityError = e?.message || "request failed";
+        return null;
+      }),
     ]);
     accountsPayload = accounts;
-    if (activity) activityPayload = activity;
+    if (activity) {
+      activityPayload = activity;
+      activityError = null;
+    }
     this.redraw(ctx);
   },
 
